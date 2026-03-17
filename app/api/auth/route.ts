@@ -36,10 +36,11 @@ export async function POST(request: NextRequest) {
 
     const token = generateToken(username);
     const response = NextResponse.json({ success: true, username });
+    const isHttps = request.headers.get("x-forwarded-proto") === "https" || request.url.startsWith("https");
 
     response.cookies.set("nexus_token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 7, // 7 days
@@ -54,11 +55,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   const response = NextResponse.json({ success: true });
+  const isHttps = request.headers.get("x-forwarded-proto") === "https" || request.url.startsWith("https");
   response.cookies.set("nexus_token", "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isHttps,
     sameSite: "lax",
     path: "/",
     maxAge: 0,

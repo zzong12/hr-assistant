@@ -36,6 +36,7 @@ COPY --from=deps /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
 COPY --from=deps /app/node_modules/bindings ./node_modules/bindings
 COPY --from=deps /app/node_modules/prebuild-install ./node_modules/prebuild-install
 COPY --from=deps /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
+COPY --from=deps /app/node_modules/pdf-parse ./node_modules/pdf-parse
 
 RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
 
