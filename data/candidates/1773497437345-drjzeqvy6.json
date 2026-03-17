@@ -1,0 +1,26 @@
+{
+  "id": "1773497437345-drjzeqvy6",
+  "name": "未命名候选人",
+  "contact": {
+    "email": "",
+    "phone": ""
+  },
+  "resume": {
+    "filename": "后端-代京捐 10年以上.txt",
+    "filepath": "",
+    "parsedData": {
+      "experience": [],
+      "education": [],
+      "skills": [
+        "Python",
+        "项目管理"
+      ],
+      "projects": [],
+      "summary": "掌握Python技能，具有项目管理相关背景。"
+    }
+  },
+  "matchedJobs": [],
+  "status": "screening",
+  "createdAt": "2026-03-14T14:10:37.345Z",
+  "updatedAt": "2026-03-14T14:14:38.691Z"
+}
