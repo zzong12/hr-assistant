@@ -229,7 +229,7 @@ async function handleFeishuMessage(messageId: string, messageType: string, messa
 
     // Reply via Feishu
     if (cleanContent.length > 500) {
-      await replyFeishuCard(messageId, "小HR回复", cleanContent.slice(0, 2000), "blue");
+      await replyFeishuCard(messageId, "Nexus 回复", cleanContent.slice(0, 2000), "blue");
     } else {
       await replyFeishuMessage(messageId, cleanContent);
     }

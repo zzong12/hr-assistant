@@ -19,7 +19,7 @@ function log(color, message) {
 }
 
 console.log('\n' + '='.repeat(60));
-log(colors.cyan, '🔍 HR数字助手 - 环境检查工具');
+log(colors.cyan, '🔍 Nexus HR - 环境检查工具');
 log(colors.blue, '='.repeat(60));
 
 // Check .env.local

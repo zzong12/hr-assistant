@@ -23,8 +23,11 @@ export async function POST(request: NextRequest) {
     if (fileType === "pdf") {
       try {
         const buffer = Buffer.from(await file.arrayBuffer());
-        const pdfParseModule = await import("pdf-parse");
-        const pdfParse = (pdfParseModule as any).default || pdfParseModule;
+        const pdfParseModule = await import("pdf-parse") as any;
+        const pdfParse = pdfParseModule.PDFParse || pdfParseModule.default || pdfParseModule;
+        if (typeof pdfParse !== "function") {
+          throw new Error(`pdf-parse module did not export a callable function. Exports: ${Object.keys(pdfParseModule).join(", ")}`);
+        }
         const pdfData = await pdfParse(buffer);
         text = pdfData.text;
       } catch (err) {

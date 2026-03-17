@@ -120,6 +120,8 @@ export interface Interview {
   scheduledTime: Date;
   duration?: number;
   type?: "onsite" | "online" | "phone";
+  location?: string;
+  interviewer?: string;
   questions: InterviewQuestion[];
   feedback?: InterviewFeedback;
   evaluationPreset?: EvaluationPreset;

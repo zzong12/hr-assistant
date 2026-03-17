@@ -25,7 +25,7 @@ export async function sendFeishuNotification(
     msg_type: "interactive",
     card: {
       header: {
-        title: { tag: "plain_text", content: `[HR数字助手] ${title}` },
+        title: { tag: "plain_text", content: `[Nexus HR] ${title}` },
         template: templateMap[color],
       },
       elements: [

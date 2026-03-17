@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HR数字助手 - 智能招聘助手",
-  description: "基于Claude Agent SDK的HR数字人智能体，专注于招聘流程全场景",
+  title: "Nexus HR - AI 招聘工作台",
+  description: "AI 驱动的智能招聘工作台，通过自然对话完成招聘全流程",
 };
 
 export default function RootLayout({

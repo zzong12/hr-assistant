@@ -138,127 +138,151 @@ export default function SettingsPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="p-6 border-b border-border">
-        <h1 className="text-xl font-bold">系统设置</h1>
+      <div className="p-6 border-b border-border/40 glass">
+        <h1 className="text-xl font-bold gradient-text">系统设置</h1>
+        <p className="text-xs text-muted-foreground mt-1">配置通知、数据管理和系统参数</p>
       </div>
       <ScrollArea className="flex-1">
-        <div className="p-6 max-w-2xl mx-auto space-y-6">
+        <div className="p-8 max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Feishu Notification */}
-          <Card className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Bell className="w-5 h-5" />
-              <h2 className="text-lg font-semibold">飞书通知</h2>
+          <Card className="p-8 border-border/40 h-fit shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <Bell className="w-5 h-5 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold">飞书通知</h2>
             </div>
-            <div className="space-y-4">
-              <div>
-                <Label className="text-sm">飞书机器人 Webhook 地址</Label>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">飞书机器人 Webhook 地址</Label>
                 <Input
                   placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
                   value={feishuUrl}
                   onChange={(e) => setFeishuUrl(e.target.value)}
-                  className="mt-1"
+                  className="h-10"
                 />
-                <p className="text-xs text-muted-foreground mt-1">在飞书群中添加自定义机器人后获取 Webhook 地址</p>
+                <p className="text-xs text-muted-foreground">在飞书群中添加自定义机器人后获取 Webhook 地址</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3 bg-muted/30 p-3 rounded-xl border border-border/40">
                 <input
                   type="checkbox"
                   id="feishu-enabled"
                   checked={feishuEnabled}
                   onChange={(e) => setFeishuEnabled(e.target.checked)}
-                  className="w-4 h-4"
+                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
                 />
-                <Label htmlFor="feishu-enabled" className="text-sm">启用飞书通知</Label>
+                <div className="space-y-0.5">
+                  <Label htmlFor="feishu-enabled" className="text-sm font-medium">启用飞书通知</Label>
+                  <p className="text-[11px] text-muted-foreground">简历分析完成、JD生成完成、面试安排确认、面试反馈提交、候选人状态变更</p>
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p>通知事件：简历分析完成、JD生成完成、面试安排确认、面试反馈提交、候选人状态变更</p>
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={handleSaveNotify} disabled={savingNotify} size="sm">
-                  {savingNotify ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}保存配置
+              <div className="flex gap-3 pt-2">
+                <Button onClick={handleSaveNotify} disabled={savingNotify} className="flex-1">
+                  {savingNotify ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}保存配置
                 </Button>
-                <Button variant="outline" onClick={handleTestNotify} disabled={testingNotify || !feishuUrl} size="sm">
-                  {testingNotify ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}发送测试通知
+                <Button variant="outline" onClick={handleTestNotify} disabled={testingNotify || !feishuUrl} className="flex-1">
+                  {testingNotify ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}测试通知
                 </Button>
               </div>
             </div>
           </Card>
 
           {/* Feishu Bidirectional */}
-          <Card className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <MessageSquare className="w-5 h-5" />
-              <h2 className="text-lg font-semibold">飞书双向通信</h2>
+          <Card className="p-8 border-border/40 h-fit shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <MessageSquare className="w-5 h-5 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold">飞书双向通信</h2>
             </div>
-            <div className="space-y-4">
-              <p className="text-xs text-muted-foreground">
-                配置飞书自建应用，实现在飞书群中直接与小HR对话。需要在飞书开放平台创建自建应用并开启机器人能力。
+            <div className="space-y-5">
+              <p className="text-sm text-muted-foreground leading-relaxed bg-primary/5 p-3 rounded-xl border border-primary/10">
+                配置飞书自建应用，实现在飞书群中直接与 Nexus 对话。需要在飞书开放平台创建自建应用并开启机器人能力。
               </p>
-              <div>
-                <Label className="text-sm">App ID</Label>
-                <Input placeholder="cli_xxxxxxxx" value={feishuAppId} onChange={(e) => setFeishuAppId(e.target.value)} className="mt-1 font-mono" />
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">App ID</Label>
+                <Input placeholder="cli_xxxxxxxx" value={feishuAppId} onChange={(e) => setFeishuAppId(e.target.value)} className="font-mono h-10" />
               </div>
-              <div>
-                <Label className="text-sm">App Secret</Label>
-                <Input placeholder="xxxxxxxx" type="password" value={feishuAppSecret} onChange={(e) => setFeishuAppSecret(e.target.value)} className="mt-1 font-mono" />
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">App Secret</Label>
+                <Input placeholder="xxxxxxxx" type="password" value={feishuAppSecret} onChange={(e) => setFeishuAppSecret(e.target.value)} className="font-mono h-10" />
               </div>
-              <div>
-                <Label className="text-sm">Verification Token</Label>
-                <Input placeholder="可选，用于验证请求来源" value={feishuVerifyToken} onChange={(e) => setFeishuVerifyToken(e.target.value)} className="mt-1 font-mono" />
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Verification Token <span className="text-muted-foreground font-normal">(可选)</span></Label>
+                <Input placeholder="用于验证请求来源" value={feishuVerifyToken} onChange={(e) => setFeishuVerifyToken(e.target.value)} className="font-mono h-10" />
               </div>
-              <div className="bg-muted rounded-lg p-3">
-                <p className="text-xs font-medium mb-1">Webhook 回调地址</p>
-                <code className="text-xs text-primary">{typeof window !== "undefined" ? window.location.origin : ""}/api/feishu/webhook</code>
-                <p className="text-xs text-muted-foreground mt-1">在飞书开放平台的"事件订阅"中填写此地址</p>
+              <div className="bg-muted/40 rounded-xl p-4 border border-border/40 space-y-1.5">
+                <p className="text-sm font-medium">Webhook 回调地址</p>
+                <code className="block text-xs text-primary bg-primary/10 p-2 rounded-lg break-all select-all">
+                  {typeof window !== "undefined" ? window.location.origin : ""}/api/feishu/webhook
+                </code>
+                <p className="text-[11px] text-muted-foreground">在飞书开放平台的"事件订阅"中填写此地址</p>
               </div>
-              <Button onClick={handleSaveFeishuApp} disabled={savingApp} size="sm">
-                {savingApp ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}保存应用配置
-              </Button>
+              <div className="pt-2">
+                <Button onClick={handleSaveFeishuApp} disabled={savingApp} className="w-full">
+                  {savingApp ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}保存应用配置
+                </Button>
+              </div>
             </div>
           </Card>
 
           {/* Data Management */}
-          <Card className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Database className="w-5 h-5" />
-              <h2 className="text-lg font-semibold">数据管理</h2>
-            </div>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
-                <Card className="p-3"><div className="text-2xl font-bold">{stats.jobs}</div><div className="text-xs text-muted-foreground">职位</div></Card>
-                <Card className="p-3"><div className="text-2xl font-bold">{stats.candidates}</div><div className="text-xs text-muted-foreground">候选人</div></Card>
-                <Card className="p-3"><div className="text-2xl font-bold">{stats.interviews}</div><div className="text-xs text-muted-foreground">面试</div></Card>
-                <Card className="p-3"><div className="text-2xl font-bold">{stats.conversations}</div><div className="text-xs text-muted-foreground">对话</div></Card>
+          <Card className="p-8 border-border/40 h-fit shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <Database className="w-5 h-5 text-primary" />
               </div>
-              <Separator />
-              <div className="flex gap-3 flex-wrap">
-                <Button variant="outline" onClick={handleExportAll} disabled={exporting}>
-                  {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}导出全部数据
+              <h2 className="text-xl font-semibold">数据管理</h2>
+            </div>
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border/40 hover:bg-muted/50 transition-colors">
+                  <div className="text-3xl font-black gradient-text mb-1">{stats.jobs}</div>
+                  <div className="text-xs font-medium text-muted-foreground">职位数量</div>
+                </div>
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border/40 hover:bg-muted/50 transition-colors">
+                  <div className="text-3xl font-black gradient-text mb-1">{stats.candidates}</div>
+                  <div className="text-xs font-medium text-muted-foreground">候选人</div>
+                </div>
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border/40 hover:bg-muted/50 transition-colors">
+                  <div className="text-3xl font-black gradient-text mb-1">{stats.interviews}</div>
+                  <div className="text-xs font-medium text-muted-foreground">面试安排</div>
+                </div>
+                <div className="p-4 rounded-2xl bg-muted/30 border border-border/40 hover:bg-muted/50 transition-colors">
+                  <div className="text-3xl font-black gradient-text mb-1">{stats.conversations}</div>
+                  <div className="text-xs font-medium text-muted-foreground">对话记录</div>
+                </div>
+              </div>
+              <Separator className="bg-border/50" />
+              <div className="flex gap-4">
+                <Button variant="outline" onClick={handleExportAll} disabled={exporting} className="flex-1 h-11">
+                  {exporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}备份数据
                 </Button>
-                <Button variant="destructive" onClick={handleClearData} disabled={clearing}>
-                  {clearing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}清除全部数据
+                <Button variant="destructive" onClick={handleClearData} disabled={clearing} className="flex-1 h-11">
+                  {clearing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}清空数据
                 </Button>
               </div>
             </div>
           </Card>
 
           {/* About */}
-          <Card className="p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Info className="w-5 h-5" />
-              <h2 className="text-lg font-semibold">关于</h2>
+          <Card className="p-8 border-border/40 h-fit shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <Info className="w-5 h-5 text-primary" />
+              </div>
+              <h2 className="text-xl font-semibold">关于</h2>
             </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">应用名称</span><span>HR数字助手</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">版本</span><span>v2.0.0</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">技术栈</span><span>Next.js + Claude AI</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">AI引擎</span><span>Claude Sonnet</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">数据存储</span><span>SQLite + LocalStorage</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">通知渠道</span><span>飞书机器人</span></div>
+            <div className="space-y-4 text-sm bg-muted/20 p-5 rounded-2xl border border-border/40">
+              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">应用名称</span><span className="font-semibold">Nexus HR</span></div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">版本</span><span className="font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs">v2.0.0</span></div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">技术栈</span><span className="font-semibold">Next.js + Claude AI</span></div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">AI引擎</span><span className="font-semibold">Claude Sonnet</span></div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">数据存储</span><span className="font-semibold">SQLite + LocalStorage</span></div>
+              <div className="flex justify-between items-center py-1"><span className="text-muted-foreground font-medium">通知渠道</span><span className="font-semibold">飞书机器人</span></div>
             </div>
-            <Separator className="my-4" />
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              HR数字助手 v2.0 —— 您的AI数字员工。通过对话即可完成职位发布、简历分析、面试安排等全流程操作，支持后台自动处理和飞书主动通知。
+            <p className="text-sm text-muted-foreground leading-relaxed mt-6 text-center">
+              Nexus HR —— 您的 AI 数字员工。通过对话即可完成职位发布、简历分析、面试安排等全流程操作，支持后台自动处理和飞书主动通知。
             </p>
           </Card>
         </div>

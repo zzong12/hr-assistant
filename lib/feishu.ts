@@ -46,7 +46,7 @@ export async function replyFeishuCard(messageId: string, title: string, content:
   try {
     const card = {
       header: {
-        title: { tag: "plain_text", content: `[小HR] ${title}` },
+        title: { tag: "plain_text", content: `[Nexus] ${title}` },
         template: color,
       },
       elements: [

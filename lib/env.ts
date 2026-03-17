@@ -6,6 +6,10 @@
  */
 
 interface EnvConfig {
+  // 认证配置
+  authUsername: string;
+  authPassword: string;
+
   // API配置
   anthropicApiKey: string;
   anthropicApiVersion?: string;
@@ -93,13 +97,17 @@ function getEnvBoolean(key: string, defaultValue: boolean): boolean {
  */
 export function loadEnvConfig(): EnvConfig {
   const config: EnvConfig = {
+    // 认证配置
+    authUsername: getEnvVar("AUTH_USERNAME", "admin"),
+    authPassword: getEnvVar("AUTH_PASSWORD", "admin123"),
+
     // API配置（必需）
     anthropicApiKey: getEnvVar("ANTHROPIC_API_KEY"),
     anthropicApiVersion: process.env.ANTHROPIC_API_VERSION,
     anthropicTimeout: getEnvNumber("ANTHROPIC_TIMEOUT", 60000),
 
     // 应用配置
-    appName: getEnvVar("NEXT_PUBLIC_APP_NAME", "HR数字助手"),
+    appName: getEnvVar("NEXT_PUBLIC_APP_NAME", "Nexus HR"),
     appVersion: getEnvVar("NEXT_PUBLIC_APP_VERSION", "1.0.0"),
     appDescription: process.env.NEXT_PUBLIC_APP_DESCRIPTION,
 
@@ -213,7 +221,7 @@ export function validateEnvConfig(config: EnvConfig): {
  */
 export function printEnvStatus(config: EnvConfig): void {
   console.log("\n" + "=".repeat(60));
-  console.log("🔧 HR数字助手 - 环境配置状态");
+  console.log("🔧 Nexus HR - 环境配置状态");
   console.log("=".repeat(60));
 
   console.log(`\n📦 应用信息:`);
@@ -245,7 +253,7 @@ export function printEnvStatus(config: EnvConfig): void {
  */
 export function getPublicEnvConfig() {
   return {
-    appName: process.env.NEXT_PUBLIC_APP_NAME || "HR数字助手",
+    appName: process.env.NEXT_PUBLIC_APP_NAME || "Nexus HR",
     appVersion: process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0",
     appDescription: process.env.NEXT_PUBLIC_APP_DESCRIPTION,
     gaId: process.env.NEXT_PUBLIC_GA_ID,

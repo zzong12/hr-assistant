@@ -5,7 +5,7 @@ export async function POST() {
   try {
     const success = await sendFeishuNotification(
       "测试通知",
-      "这是一条来自 HR数字助手 的测试通知。\n如果您看到此消息，说明飞书通知配置正确。",
+      "这是一条来自 Nexus HR 的测试通知。\n如果您看到此消息，说明飞书通知配置正确。",
       "blue"
     );
     if (!success) {
