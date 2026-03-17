@@ -206,7 +206,7 @@ function ConversationCard({
       onClick={() => onOpen(conv)}
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5">
             <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
               <MessageSquare className="w-3.5 h-3.5 text-primary" />
@@ -229,7 +229,7 @@ function ConversationCard({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-lg">
               <MoreHorizontal className="w-4 h-4" />
             </Button>
           </DropdownMenuTrigger>
