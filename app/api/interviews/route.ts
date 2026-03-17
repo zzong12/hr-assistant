@@ -57,17 +57,15 @@ export async function POST(request: NextRequest) {
       jobId,
       candidateId,
       scheduledTime,
-      location,
-      interviewer,
       autoGenerate = true,
       evaluationPresetId,
     } = body;
 
-    if (!jobId || !candidateId || !scheduledTime || !location || !interviewer) {
+    if (!jobId || !candidateId || !scheduledTime) {
       return NextResponse.json(
         {
           error:
-            "Missing required fields: jobId, candidateId, scheduledTime, location, interviewer",
+            "Missing required fields: jobId, candidateId, scheduledTime",
         },
         { status: 400 }
       );
@@ -94,8 +92,6 @@ export async function POST(request: NextRequest) {
       jobTitle: job?.title,
       candidateName: candidate?.name,
       scheduledTime: new Date(scheduledTime),
-      location,
-      interviewer,
       questions: [],
       status: "scheduled",
       createdAt: new Date(),

@@ -305,25 +305,89 @@ export function checkTimeConflict(
 }
 
 /**
- * Format interview as calendar event
+ * Format interview as calendar event (iCal format)
  */
-export function formatAsCalendarEvent(interview: Interview): string {
+export function formatAsCalendarEvent(
+  interview: Interview,
+  job?: { title?: string },
+  candidate?: { name?: string }
+): string {
   const startDate = new Date(interview.scheduledTime);
-  const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+  const duration = interview.duration || 60; // Default 60 minutes
+  const endDate = new Date(startDate.getTime() + duration * 60 * 1000);
+  const now = new Date();
+
+  // Use jobTitle/candidateName if available, fallback to IDs
+  const jobTitle = job?.title || interview.jobTitle || interview.jobId;
+  const candidateName = candidate?.name || interview.candidateName || interview.candidateId;
 
   return `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//HR Assistant//Interview Calendar//CN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
 BEGIN:VEVENT
+UID:interview_${interview.id}@hr-assistant
+DTSTAMP:${formatDateForICal(now)}
 DTSTART:${formatDateForICal(startDate)}
 DTEND:${formatDateForICal(endDate)}
-SUMMARY:面试 - ${interview.candidateId}
-DESCRIPTION:面试职位: ${interview.jobId}\\n面试地点: ${interview.location}\\n面试官: ${interview.interviewer}
-LOCATION:${interview.location}
+SUMMARY:面试 - ${candidateName} (${jobTitle})
+DESCRIPTION:职位：${jobTitle}\\n候选人：${candidateName}
+LOCATION:
+STATUS:CONFIRMED
+SEQUENCE:0
+BEGIN:VALARM
+TRIGGER:-PT15M
+ACTION:DISPLAY
+DESCRIPTION:面试提醒
+END:VALARM
 END:VEVENT
 END:VCALENDAR`;
 }
 
 function formatDateForICal(date: Date): string {
   return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
+
+/**
+ * Export interview to calendar file (.ics)
+ * Triggers browser download of the calendar file
+ */
+export function exportInterviewToCalendar(
+  interview: Interview,
+  job?: { title?: string },
+  candidate?: { name?: string }
+): void {
+  try {
+    // Generate iCal content
+    const icsContent = formatAsCalendarEvent(interview, job, candidate);
+
+    // Create Blob with UTF-8 encoding
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+
+    // Generate filename
+    const dateStr = new Date(interview.scheduledTime)
+      .toISOString()
+      .slice(0, 10);
+    const candidateName = candidate?.name || interview.candidateName || interview.candidateId;
+    const filename = `面试_${candidateName}_${dateStr}.ics`;
+
+    // Create download link
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+
+    // Trigger download
+    document.body.appendChild(a);
+    a.click();
+
+    // Cleanup
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Failed to export interview to calendar:', error);
+    throw error;
+  }
 }

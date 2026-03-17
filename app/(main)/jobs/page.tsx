@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -15,10 +16,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Briefcase, Plus, Search, Loader2, Sparkles, Trash2, Edit, ChevronDown, ChevronUp,
+  Briefcase, Plus, Search, Loader2, Sparkles, Trash2, Edit, ChevronDown, ChevronUp, Check, Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Job } from "@/lib/types";
+import type { Job, Candidate } from "@/lib/types";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   active: { label: "招聘中", variant: "default" },
@@ -29,27 +30,97 @@ const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secon
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
+  const [deleting, setDeleting] = useState(false);
 
   const loadJobs = async () => {
     try {
-      const res = await fetch("/api/jobs");
-      const data = await res.json();
-      setJobs(data.jobs || []);
-    } catch { toast.error("加载职位失败"); }
+      const [jobsRes, candidatesRes] = await Promise.all([
+        fetch("/api/jobs"),
+        fetch("/api/candidates")
+      ]);
+      const jobsData = await jobsRes.json();
+      const candidatesData = await candidatesRes.json();
+      setJobs(jobsData.jobs || []);
+      setCandidates(candidatesData.candidates || []);
+    } catch { toast.error("加载数据失败"); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { loadJobs(); }, []);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("确定删除此职位？")) return;
-    const res = await fetch(`/api/jobs?id=${id}`, { method: "DELETE" });
-    if (res.ok) { toast.success("已删除"); loadJobs(); setSelectedJob(null); }
+  const handleDelete = async (id?: string) => {
+    if (id) {
+      setDeleteType("single");
+      setSelectedJob(jobs.find(j => j.id === id) || null);
+    } else {
+      setDeleteType("batch");
+    }
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      const idsToDelete = deleteType === "single" && selectedJob ? [selectedJob.id] : Array.from(selectedIds);
+
+      // Batch delete
+      const results = await Promise.allSettled(
+        idsToDelete.map(id => fetch(`/api/jobs?id=${id}`, { method: "DELETE" }))
+      );
+
+      const succeeded = results.filter(r => r.status === "fulfilled" && (r.value as Response).ok).length;
+      const failed = idsToDelete.length - succeeded;
+
+      if (succeeded > 0) {
+        toast.success(`成功删除 ${succeeded} 个职位${failed > 0 ? `，${failed} 个失败` : ""}`);
+        await loadJobs();
+        setSelectedJob(null);
+        setSelectedIds(new Set());
+      }
+      if (failed > 0 && succeeded === 0) {
+        toast.error("删除失败");
+      }
+    } catch {
+      toast.error("删除失败");
+    } finally {
+      setDeleting(false);
+      setIsDeleteDialogOpen(false);
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map(j => j.id)));
+    }
+  };
+
+  const handleSelectOne = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleCardClick = (job: Job, e: React.MouseEvent) => {
+    // Don't open detail if clicking on checkbox
+    if ((e.target as HTMLElement).closest("input[type='checkbox']")) {
+      return;
+    }
+    setSelectedJob(job);
   };
 
   const handleStatusChange = async (id: string, status: string) => {
@@ -59,6 +130,17 @@ export default function JobsPage() {
       body: JSON.stringify({ id, status }),
     });
     if (res.ok) { toast.success("状态已更新"); loadJobs(); }
+  };
+
+  const getMatchedCandidates = (jobId: string) => {
+    return candidates
+      .map(c => ({
+        candidate: c,
+        match: c.matchedJobs?.find(m => m.jobId === jobId)
+      }))
+      .filter(item => item.match !== undefined)
+      .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0))
+      .slice(0, 5);
   };
 
   const filtered = jobs.filter((j) => {
@@ -101,6 +183,27 @@ export default function JobsPage() {
             </SelectContent>
           </Select>
         </div>
+
+        {selectedIds.size > 0 && (
+          <div className="px-4 py-2 bg-primary/10 border-b border-border flex items-center justify-between">
+            <span className="text-sm font-medium">已选 {selectedIds.size} 项</span>
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={handleSelectAll}>
+                {selectedIds.size === filtered.length ? "取消全选" : "全选"}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => handleDelete()}
+                disabled={deleting}
+              >
+                {deleting ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Trash2 className="w-3 h-3 mr-1" />}
+                批量删除
+              </Button>
+            </div>
+          </div>
+        )}
+
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
             {loading ? (
@@ -111,9 +214,17 @@ export default function JobsPage() {
               <Card
                 key={job.id}
                 className={`p-3 cursor-pointer hover:bg-accent transition-all duration-200 transition-colors ${selectedJob?.id === job.id ? "bg-accent" : ""}`}
-                onClick={() => setSelectedJob(job)}
+                onClick={(e) => handleCardClick(job, e)}
               >
-                <div className="flex justify-between items-start">
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(job.id)}
+                    onChange={() => handleSelectOne(job.id)}
+                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex justify-between items-start flex-1">
                   <div className="space-y-1 min-w-0 flex-1">
                     <p className="font-medium text-sm truncate">{job.title}</p>
                     <p className="text-xs text-muted-foreground">{job.department}</p>
@@ -125,54 +236,145 @@ export default function JobsPage() {
                     {STATUS_CONFIG[job.status]?.label || job.status}
                   </Badge>
                 </div>
+                </div>
               </Card>
             ))}
           </div>
         </ScrollArea>
       </div>
 
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {selectedJob ? (
-          <ScrollArea className="flex-1 p-6">
-            <div className="max-w-2xl mx-auto space-y-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h2 className="text-2xl font-bold">{selectedJob.title}</h2>
-                  <p className="text-muted-foreground">{selectedJob.department} · {selectedJob.level}</p>
+          <>
+            {/* 左侧：职位详情 */}
+            <div className="flex-1 overflow-y-auto border-r border-border">
+              <div className="p-6 space-y-6">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-2xl font-bold">{selectedJob.title}</h2>
+                    <p className="text-muted-foreground">{selectedJob.department} · {selectedJob.level}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Select value={selectedJob.status} onValueChange={(v) => handleStatusChange(selectedJob.id, v)}>
+                      <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">招聘中</SelectItem>
+                        <SelectItem value="draft">草稿</SelectItem>
+                        <SelectItem value="paused">暂停</SelectItem>
+                        <SelectItem value="closed">已关闭</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button variant="destructive" size="icon" onClick={() => handleDelete(selectedJob.id)}><Trash2 className="w-4 h-4" /></Button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Select value={selectedJob.status} onValueChange={(v) => handleStatusChange(selectedJob.id, v)}>
-                    <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">招聘中</SelectItem>
-                      <SelectItem value="draft">草稿</SelectItem>
-                      <SelectItem value="paused">暂停</SelectItem>
-                      <SelectItem value="closed">已关闭</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button variant="destructive" size="icon" onClick={() => handleDelete(selectedJob.id)}><Trash2 className="w-4 h-4" /></Button>
-                </div>
+                {selectedJob.salary && (
+                  <p className="text-lg font-semibold text-primary">{selectedJob.salary.min}-{selectedJob.salary.max}K</p>
+                )}
+                {selectedJob.skills?.length > 0 && (
+                  <div className="flex flex-wrap gap-2">{selectedJob.skills.map((s) => <Badge key={s} variant="secondary">{s}</Badge>)}</div>
+                )}
+                {selectedJob.description?.overview && (
+                  <div><h3 className="font-semibold mb-2">职位概述</h3><p className="text-sm text-muted-foreground">{selectedJob.description.overview}</p></div>
+                )}
+                {selectedJob.description?.responsibilities?.length > 0 && (
+                  <div><h3 className="font-semibold mb-2">岗位职责</h3><ul className="text-sm text-muted-foreground space-y-1">{selectedJob.description.responsibilities.map((r, i) => <li key={i}>• {r}</li>)}</ul></div>
+                )}
+                {selectedJob.description?.requirements?.length > 0 && (
+                  <div><h3 className="font-semibold mb-2">任职要求</h3><ul className="text-sm text-muted-foreground space-y-1">{selectedJob.description.requirements.map((r, i) => <li key={i}>• {r}</li>)}</ul></div>
+                )}
+                {selectedJob.description?.benefits?.length > 0 && (
+                  <div><h3 className="font-semibold mb-2">福利待遇</h3><ul className="text-sm text-muted-foreground space-y-1">{selectedJob.description.benefits.map((b, i) => <li key={i}>• {b}</li>)}</ul></div>
+                )}
               </div>
-              {selectedJob.salary && (
-                <p className="text-lg font-semibold text-primary">{selectedJob.salary.min}-{selectedJob.salary.max}K</p>
-              )}
-              {selectedJob.skills?.length > 0 && (
-                <div className="flex flex-wrap gap-2">{selectedJob.skills.map((s) => <Badge key={s} variant="secondary">{s}</Badge>)}</div>
-              )}
-              {selectedJob.description?.overview && (
-                <div><h3 className="font-semibold mb-2">职位概述</h3><p className="text-sm text-muted-foreground">{selectedJob.description.overview}</p></div>
-              )}
-              {selectedJob.description?.responsibilities?.length > 0 && (
-                <div><h3 className="font-semibold mb-2">岗位职责</h3><ul className="text-sm text-muted-foreground space-y-1">{selectedJob.description.responsibilities.map((r, i) => <li key={i}>• {r}</li>)}</ul></div>
-              )}
-              {selectedJob.description?.requirements?.length > 0 && (
-                <div><h3 className="font-semibold mb-2">任职要求</h3><ul className="text-sm text-muted-foreground space-y-1">{selectedJob.description.requirements.map((r, i) => <li key={i}>• {r}</li>)}</ul></div>
-              )}
-              {selectedJob.description?.benefits?.length > 0 && (
-                <div><h3 className="font-semibold mb-2">福利待遇</h3><ul className="text-sm text-muted-foreground space-y-1">{selectedJob.description.benefits.map((b, i) => <li key={i}>• {b}</li>)}</ul></div>
-              )}
             </div>
-          </ScrollArea>
+
+            {/* 右侧：匹配的候选人 */}
+            <div className="w-96 overflow-y-auto border-l border-border bg-muted/30">
+              {(() => {
+                const matchedCandidates = getMatchedCandidates(selectedJob.id);
+
+                return (
+                  <div className="sticky top-0">
+                    <div className="p-4 border-b border-border bg-background">
+                      <h3 className="font-semibold flex items-center gap-2 mb-1">
+                        <Users className="w-4 h-4 text-primary" />
+                        匹配的候选人
+                      </h3>
+                      {matchedCandidates.length > 0 && (
+                        <Badge variant="secondary" className="ml-auto">{matchedCandidates.length} 位</Badge>
+                      )}
+                    </div>
+
+                    <div className="p-4 space-y-3">
+                      {matchedCandidates.length === 0 ? (
+                        <div className="text-center py-8">
+                          <Users className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+                          <p className="text-sm text-muted-foreground">暂无匹配候选人</p>
+                          <p className="text-xs text-muted-foreground mt-1">请先在候选人页面进行匹配</p>
+                        </div>
+                      ) : (
+                        matchedCandidates.map(({ candidate, match }) => {
+                          const scoreColor = match!.score >= 80 ? "text-green-600 dark:text-green-400" :
+                                           match!.score >= 60 ? "text-amber-600 dark:text-amber-400" : "text-red-500 dark:text-red-400";
+                          const scoreBg = match!.score >= 80 ? "bg-green-100 dark:bg-green-900/30" :
+                                        match!.score >= 60 ? "bg-amber-100 dark:bg-amber-900/30" : "bg-red-100 dark:bg-red-900/30";
+
+                          return (
+                            <Card key={candidate.id} className={`p-4 ${scoreBg} border-l-4 ${match!.score >= 80 ? "border-green-500" : match!.score >= 60 ? "border-amber-500" : "border-red-500"}`}>
+                              <div className="flex justify-between items-start mb-3">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-semibold text-sm mb-1">{candidate.name}</p>
+                                  <p className="text-xs text-muted-foreground truncate">{candidate.contact?.email || candidate.contact?.phone || ""}</p>
+                                </div>
+                                <div className={`text-2xl font-bold ${scoreColor}`}>
+                                  {match!.score}
+                                </div>
+                              </div>
+
+                              {match!.reason && (
+                                <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{match!.reason}</p>
+                              )}
+
+                              {((match!.pros?.length ?? 0) > 0 || (match!.cons?.length ?? 0) > 0) && (
+                                <div className="space-y-2">
+                                  {(match!.pros?.length ?? 0) > 0 && (
+                                    <div>
+                                      <p className="text-xs font-semibold text-green-600 dark:text-green-400 mb-1">优势</p>
+                                      <div className="space-y-1">
+                                        {match!.pros!.slice(0, 3).map((p, i) => (
+                                          <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
+                                            <span className="shrink-0 text-green-600">•</span>
+                                            <span>{p}</span>
+                                          </p>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {(match!.cons?.length ?? 0) > 0 && (
+                                    <div>
+                                      <p className="text-xs font-semibold text-orange-600 dark:text-orange-400 mb-1">风险</p>
+                                      <div className="space-y-1">
+                                        {match!.cons!.slice(0, 3).map((c, i) => (
+                                          <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
+                                            <span className="shrink-0 text-orange-600">•</span>
+                                            <span>{c}</span>
+                                          </p>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </Card>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
             <div className="text-center">
@@ -185,6 +387,20 @@ export default function JobsPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title={deleteType === "single" ? "删除职位" : "批量删除职位"}
+        description={
+          deleteType === "single"
+            ? `确定要删除职位"${selectedJob?.title}"吗？此操作无法撤销。`
+            : `确定要删除选中的 ${selectedIds.size} 个职位吗？此操作无法撤销。`
+        }
+        confirmLabel={deleting ? "删除中..." : "确定删除"}
+        onConfirm={confirmDelete}
+        variant="destructive"
+      />
     </div>
   );
 }

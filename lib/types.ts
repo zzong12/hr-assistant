@@ -119,9 +119,7 @@ export interface Interview {
   candidateName?: string;
   scheduledTime: Date;
   duration?: number;
-  location: string;
   type?: "onsite" | "online" | "phone";
-  interviewer: string;
   questions: InterviewQuestion[];
   feedback?: InterviewFeedback;
   evaluationPreset?: EvaluationPreset;

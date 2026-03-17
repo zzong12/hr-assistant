@@ -218,6 +218,36 @@ export function VoiceAssistant({ interviewId, questions, onTranscriptSave }: Voi
         </div>
       </Card>
 
+      {/* Current Question Details */}
+      <Card className="p-4">
+        <h4 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+          <Volume2 className="w-3.5 h-3.5 text-primary" />当前题目内容
+        </h4>
+        <div className="space-y-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Badge variant="outline" className="text-[10px]">
+                {currentQuestion?.category || "未分类"}
+              </Badge>
+              {currentQuestion?.difficulty && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {currentQuestion.difficulty === "easy" ? "简单" :
+                   currentQuestion.difficulty === "medium" ? "中等" :
+                   currentQuestion.difficulty === "hard" ? "困难" : currentQuestion.difficulty}
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm font-medium">{currentQuestion?.question || "无题目内容"}</p>
+          </div>
+          {currentQuestion?.purpose && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1">考察目的</p>
+              <p className="text-xs text-muted-foreground">{currentQuestion.purpose}</p>
+            </div>
+          )}
+        </div>
+      </Card>
+
       <div className="grid grid-cols-2 gap-4">
         {/* Transcript */}
         <Card className="p-4">

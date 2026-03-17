@@ -12,6 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -37,9 +38,12 @@ import {
   CheckCircle,
   XCircle,
   ChevronDown,
+  Check,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Interview, Job, Candidate, EvaluationPreset } from "@/lib/types";
+import { exportInterviewToCalendar } from "@/lib/interview-utils";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   scheduled: { label: "已安排", variant: "default" },
@@ -59,6 +63,10 @@ export default function InterviewsPage() {
   const [generatingQuestions, setGeneratingQuestions] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<"info" | "questions" | "voice">("info");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -104,14 +112,84 @@ export default function InterviewsPage() {
   const getJobTitle = (jobId: string) =>
     jobs.find((j) => j.id === jobId)?.title || jobId;
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id?: string) => {
+    if (id) {
+      setDeleteType("single");
+      setSelectedInterview(interviews.find(i => i.id === id) || null);
+    } else {
+      setDeleteType("batch");
+    }
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    setDeleting(true);
     try {
-      await fetch(`/api/interviews?id=${id}`, { method: "DELETE" });
-      setInterviews(interviews.filter((i) => i.id !== id));
-      if (selectedInterview?.id === id) setSelectedInterview(null);
-      toast.success("面试已删除");
+      const idsToDelete = deleteType === "single" && selectedInterview ? [selectedInterview.id] : Array.from(selectedIds);
+
+      const results = await Promise.allSettled(
+        idsToDelete.map(id => fetch(`/api/interviews?id=${id}`, { method: "DELETE" }))
+      );
+
+      const succeeded = results.filter(r => r.status === "fulfilled" && (r.value as Response).ok).length;
+      const failed = idsToDelete.length - succeeded;
+
+      if (succeeded > 0) {
+        toast.success(`成功删除 ${succeeded} 个面试记录${failed > 0 ? `，${failed} 个失败` : ""}`);
+        await loadData();
+        setSelectedInterview(null);
+        setSelectedIds(new Set());
+      }
+      if (failed > 0 && succeeded === 0) {
+        toast.error("删除失败");
+      }
     } catch {
       toast.error("删除失败");
+    } finally {
+      setDeleting(false);
+      setIsDeleteDialogOpen(false);
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredInterviews.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredInterviews.map(i => i.id)));
+    }
+  };
+
+  const handleSelectOne = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleCardClick = (interview: Interview, e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("input[type='checkbox']")) {
+      return;
+    }
+    setSelectedInterview(interview);
+  };
+
+  const handleExportCalendar = () => {
+    if (!selectedInterview) return;
+
+    try {
+      // Find job and candidate objects for better names
+      const job = jobs.find(j => j.id === selectedInterview.jobId);
+      const candidate = candidates.find(c => c.id === selectedInterview.candidateId);
+
+      exportInterviewToCalendar(selectedInterview, job, candidate);
+      toast.success("日历文件已下载", {
+        description: "请在苹果日历中打开此文件",
+      });
+    } catch (error) {
+      toast.error("导出失败，请重试");
     }
   };
 
@@ -212,6 +290,26 @@ export default function InterviewsPage() {
           </Select>
         </div>
 
+        {selectedIds.size > 0 && (
+          <div className="px-4 py-2 bg-primary/10 border-b border-border flex items-center justify-between">
+            <span className="text-sm font-medium">已选 {selectedIds.size} 项</span>
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={handleSelectAll}>
+                {selectedIds.size === filteredInterviews.length ? "取消全选" : "全选"}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => handleDelete()}
+                disabled={deleting}
+              >
+                {deleting ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Trash2 className="w-3 h-3 mr-1" />}
+                批量删除
+              </Button>
+            </div>
+          </div>
+        )}
+
         <ScrollArea className="flex-1">
           <div className="p-3 space-y-2">
             {filteredInterviews.map((interview) => (
@@ -220,9 +318,18 @@ export default function InterviewsPage() {
                 className={`p-3 cursor-pointer transition-colors hover:bg-muted/50 ${
                   selectedInterview?.id === interview.id ? "ring-2 ring-primary" : ""
                 }`}
-                onClick={() => setSelectedInterview(interview)}
+                onClick={(e) => handleCardClick(interview, e)}
               >
-                <div className="flex items-start justify-between mb-1">
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(interview.id)}
+                    onChange={() => handleSelectOne(interview.id)}
+                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex items-start justify-between mb-1 flex-1">
+                    <div>
                   <h3 className="font-medium text-sm">
                     {getCandidateName(interview.candidateId)}
                   </h3>
@@ -248,6 +355,8 @@ export default function InterviewsPage() {
                       minute: "2-digit",
                     })}
                   </span>
+                </div>
+                </div>
                 </div>
               </Card>
             ))}
@@ -286,6 +395,14 @@ export default function InterviewsPage() {
                   </div>
                 </div>
                 <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleExportCalendar}
+                  >
+                    <Download className="w-4 h-4 mr-1" />
+                    添加到日历
+                  </Button>
                   {selectedInterview.status === "scheduled" && (
                     <>
                       <Button
@@ -350,24 +467,6 @@ export default function InterviewsPage() {
                         <div className="text-xs text-muted-foreground">时间</div>
                         <div className="text-sm font-medium">
                           {new Date(selectedInterview.scheduledTime).toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <MapPin className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <div className="text-xs text-muted-foreground">地点</div>
-                        <div className="text-sm font-medium">
-                          {selectedInterview.location}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <User className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <div className="text-xs text-muted-foreground">面试官</div>
-                        <div className="text-sm font-medium">
-                          {selectedInterview.interviewer}
                         </div>
                       </div>
                     </div>
@@ -611,6 +710,20 @@ export default function InterviewsPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title={deleteType === "single" ? "删除面试记录" : "批量删除面试记录"}
+        description={
+          deleteType === "single"
+            ? `确定要删除面试记录吗？此操作无法撤销。`
+            : `确定要删除选中的 ${selectedIds.size} 个面试记录吗？此操作无法撤销。`
+        }
+        confirmLabel={deleting ? "删除中..." : "确定删除"}
+        onConfirm={confirmDelete}
+        variant="destructive"
+      />
     </div>
   );
 }
@@ -640,8 +753,6 @@ function CreateInterviewForm({
   const [jobId, setJobId] = useState("");
   const [candidateId, setCandidateId] = useState("");
   const [scheduledTime, setScheduledTime] = useState(getNextWorkday());
-  const [location, setLocation] = useState("");
-  const [interviewer, setInterviewer] = useState("");
   const [evaluationPresetId, setEvaluationPresetId] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
@@ -661,8 +772,6 @@ function CreateInterviewForm({
           jobId,
           candidateId,
           scheduledTime: new Date(scheduledTime).toISOString(),
-          location,
-          interviewer,
           autoGenerate: true,
           evaluationPresetId: evaluationPresetId || undefined,
         }),
@@ -724,32 +833,6 @@ function CreateInterviewForm({
           type="datetime-local"
           value={scheduledTime}
           onChange={(e) => setScheduledTime(e.target.value)}
-          required
-        />
-      </div>
-
-      <div>
-        <Label>面试地点 *</Label>
-        <div className="flex flex-wrap gap-1 mb-1">
-          {["线上-腾讯会议", "线上-飞书", "线下-会议室A", "线下-会议室B"].map((loc) => (
-            <Button key={loc} type="button" variant="outline" size="sm" className="text-xs h-6 transition-colors"
-              onClick={() => setLocation(loc)}>{loc}</Button>
-          ))}
-        </div>
-        <Input
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          placeholder="会议室或线上链接"
-          required
-        />
-      </div>
-
-      <div>
-        <Label>面试官 *</Label>
-        <Input
-          value={interviewer}
-          onChange={(e) => setInterviewer(e.target.value)}
-          placeholder="面试官姓名"
           required
         />
       </div>

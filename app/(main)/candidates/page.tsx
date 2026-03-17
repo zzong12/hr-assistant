@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Users, Upload, Search, Loader2, FileText, Sparkles, Trash2, RefreshCw,
+  Users, Upload, Search, Loader2, FileText, Sparkles, Trash2, RefreshCw, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Candidate, Job } from "@/lib/types";
@@ -44,6 +45,10 @@ export default function CandidatesPage() {
   const [matchingAll, setMatchingAll] = useState(false);
   const [batchMatching, setBatchMatching] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = async () => {
     try {
@@ -149,10 +154,68 @@ export default function CandidatesPage() {
     if (res.ok) { toast.success("状态已更新"); loadData(); }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("确定删除此候选人？")) return;
-    const res = await fetch(`/api/candidates?id=${id}`, { method: "DELETE" });
-    if (res.ok) { toast.success("已删除"); loadData(); setSelectedCandidate(null); }
+  const handleDelete = async (id?: string) => {
+    if (id) {
+      setDeleteType("single");
+      setSelectedCandidate(candidates.find(c => c.id === id) || null);
+    } else {
+      setDeleteType("batch");
+    }
+    setIsDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    setDeleting(true);
+    try {
+      const idsToDelete = deleteType === "single" && selectedCandidate ? [selectedCandidate.id] : Array.from(selectedIds);
+
+      const results = await Promise.allSettled(
+        idsToDelete.map(id => fetch(`/api/candidates?id=${id}`, { method: "DELETE" }))
+      );
+
+      const succeeded = results.filter(r => r.status === "fulfilled" && (r.value as Response).ok).length;
+      const failed = idsToDelete.length - succeeded;
+
+      if (succeeded > 0) {
+        toast.success(`成功删除 ${succeeded} 个候选人${failed > 0 ? `，${failed} 个失败` : ""}`);
+        await loadData();
+        setSelectedCandidate(null);
+        setSelectedIds(new Set());
+      }
+      if (failed > 0 && succeeded === 0) {
+        toast.error("删除失败");
+      }
+    } catch {
+      toast.error("删除失败");
+    } finally {
+      setDeleting(false);
+      setIsDeleteDialogOpen(false);
+    }
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map(c => c.id)));
+    }
+  };
+
+  const handleSelectOne = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleCardClick = (candidate: Candidate, e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("input[type='checkbox']")) {
+      return;
+    }
+    setSelectedCandidate(candidate);
   };
 
   const handleUploaded = (newCandidate?: Candidate) => {
@@ -246,6 +309,27 @@ export default function CandidatesPage() {
             )}
           </Button>
         </div>
+
+        {selectedIds.size > 0 && (
+          <div className="px-4 py-2 bg-primary/10 border-b border-border flex items-center justify-between">
+            <span className="text-sm font-medium">已选 {selectedIds.size} 项</span>
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={handleSelectAll}>
+                {selectedIds.size === filtered.length ? "取消全选" : "全选"}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => handleDelete()}
+                disabled={deleting}
+              >
+                {deleting ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Trash2 className="w-3 h-3 mr-1" />}
+                批量删除
+              </Button>
+            </div>
+          </div>
+        )}
+
         <ScrollArea className="flex-1">
           <div className="p-2 space-y-1">
             {loading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div> :
@@ -256,8 +340,16 @@ export default function CandidatesPage() {
               const scoreColor = topScore >= 80 ? "text-green-600" : topScore >= 60 ? "text-amber-600" : topScore >= 0 ? "text-red-500" : "text-muted-foreground";
               const scoreBg = topScore >= 80 ? "bg-green-50 dark:bg-green-950/50" : topScore >= 60 ? "bg-amber-50 dark:bg-amber-950/50" : "";
               return (
-              <Card key={c.id} className={`p-3 cursor-pointer hover:bg-accent transition-colors ${selectedCandidate?.id === c.id ? "bg-accent" : ""} ${scoreBg}`} onClick={() => setSelectedCandidate(c)}>
-                <div className="flex justify-between items-start">
+              <Card key={c.id} className={`p-3 cursor-pointer hover:bg-accent transition-colors ${selectedCandidate?.id === c.id ? "bg-accent" : ""} ${scoreBg}`} onClick={(e) => handleCardClick(c, e)}>
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(c.id)}
+                    onChange={() => handleSelectOne(c.id)}
+                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex justify-between items-start flex-1">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-sm truncate">{c.name}</p>
                     <p className="text-xs text-muted-foreground truncate">{c.resume?.parsedData?.skills?.slice(0, 3).join(", ") || "待分析"}</p>
@@ -271,6 +363,7 @@ export default function CandidatesPage() {
                   <Badge variant={STATUS_CONFIG[c.status]?.variant || "outline"} className="text-[10px] shrink-0 ml-2">
                     {STATUS_CONFIG[c.status]?.label || c.status}
                   </Badge>
+                </div>
                 </div>
               </Card>
               );
@@ -396,6 +489,20 @@ export default function CandidatesPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        title={deleteType === "single" ? "删除候选人" : "批量删除候选人"}
+        description={
+          deleteType === "single"
+            ? `确定要删除候选人"${selectedCandidate?.name}"吗？此操作无法撤销。`
+            : `确定要删除选中的 ${selectedIds.size} 个候选人吗？此操作无法撤销。`
+        }
+        confirmLabel={deleting ? "删除中..." : "确定删除"}
+        onConfirm={confirmDelete}
+        variant="destructive"
+      />
     </div>
   );
 }
