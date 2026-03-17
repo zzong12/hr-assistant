@@ -83,37 +83,37 @@
 }
 
 .dark {
-  --background: oklch(0.13 0.015 260);
+  --background: oklch(0.11 0.01 260);
   --foreground: oklch(0.95 0.005 255);
-  --card: oklch(0.17 0.02 260);
+  --card: oklch(0.13 0.015 260);
   --card-foreground: oklch(0.95 0.005 255);
-  --popover: oklch(0.17 0.02 260);
+  --popover: oklch(0.13 0.015 260);
   --popover-foreground: oklch(0.95 0.005 255);
-  --primary: oklch(0.65 0.2 255);
-  --primary-foreground: oklch(0.13 0.015 260);
-  --secondary: oklch(0.22 0.025 260);
+  --primary: oklch(0.65 0.2 265);
+  --primary-foreground: oklch(0.11 0.01 260);
+  --secondary: oklch(0.18 0.02 260);
   --secondary-foreground: oklch(0.95 0.005 255);
-  --muted: oklch(0.22 0.02 260);
+  --muted: oklch(0.18 0.02 260);
   --muted-foreground: oklch(0.65 0.02 260);
-  --accent: oklch(0.25 0.04 260);
+  --accent: oklch(0.2 0.03 260);
   --accent-foreground: oklch(0.95 0.005 255);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.65 0.2 255);
-  --chart-1: oklch(0.65 0.2 255);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.65 0.2 265);
+  --chart-1: oklch(0.65 0.2 265);
   --chart-2: oklch(0.7 0.18 200);
   --chart-3: oklch(0.65 0.22 310);
   --chart-4: oklch(0.75 0.15 145);
   --chart-5: oklch(0.7 0.2 40);
-  --sidebar: oklch(0.15 0.02 260);
+  --sidebar: oklch(0.12 0.015 260);
   --sidebar-foreground: oklch(0.95 0.005 255);
-  --sidebar-primary: oklch(0.65 0.2 255);
+  --sidebar-primary: oklch(0.65 0.2 265);
   --sidebar-primary-foreground: oklch(0.95 0 0);
-  --sidebar-accent: oklch(0.22 0.04 260);
+  --sidebar-accent: oklch(0.18 0.03 260);
   --sidebar-accent-foreground: oklch(0.95 0.005 255);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.65 0.2 255);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.65 0.2 265);
 }
 
 @layer base {
@@ -128,47 +128,76 @@
     @apply bg-background text-foreground;
     height: 100%;
   }
+
+  /* Custom Scrollbar for a premium feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full transition-colors;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
 }
 
 @layer utilities {
   .glass {
-    backdrop-filter: blur(12px) saturate(180%);
-    background: oklch(1 0 0 / 70%);
+    backdrop-filter: blur(16px) saturate(200%);
+    background: oklch(1 0 0 / 60%);
+    border-bottom: 1px solid oklch(0.92 0.01 255 / 50%);
   }
   .dark .glass {
-    background: oklch(0.15 0.02 260 / 70%);
+    background: oklch(0.11 0.01 260 / 60%);
+    border-bottom: 1px solid oklch(1 0 0 / 8%);
+  }
+
+  .glass-panel {
+    backdrop-filter: blur(12px) saturate(180%);
+    background: oklch(1 0 0 / 70%);
+    border: 1px solid oklch(0.92 0.01 255 / 80%);
+    box-shadow: 0 4px 24px -1px oklch(0 0 0 / 4%);
+  }
+  .dark .glass-panel {
+    background: oklch(0.13 0.015 260 / 70%);
+    border: 1px solid oklch(1 0 0 / 10%);
+    box-shadow: 0 4px 24px -1px oklch(0 0 0 / 20%);
   }
 
   .gradient-primary {
-    background: linear-gradient(135deg, oklch(0.55 0.2 255), oklch(0.6 0.22 290));
+    background: linear-gradient(135deg, oklch(0.55 0.2 265), oklch(0.6 0.22 310));
   }
   .gradient-text {
-    background: linear-gradient(135deg, oklch(0.45 0.22 255), oklch(0.55 0.24 290));
+    background: linear-gradient(135deg, oklch(0.5 0.2 265), oklch(0.55 0.22 310));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
   .dark .gradient-text {
-    background: linear-gradient(135deg, oklch(0.7 0.2 255), oklch(0.75 0.22 290));
+    background: linear-gradient(135deg, oklch(0.75 0.15 265), oklch(0.8 0.18 310));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
   .gradient-card {
-    background: linear-gradient(145deg, oklch(1 0 0), oklch(0.97 0.01 255));
-    border: 1px solid oklch(0.92 0.02 255);
+    background: linear-gradient(145deg, oklch(1 0 0), oklch(0.98 0.005 255));
+    border: 1px solid oklch(0.92 0.01 255);
   }
   .dark .gradient-card {
-    background: linear-gradient(145deg, oklch(0.18 0.02 260), oklch(0.15 0.03 270));
-    border: 1px solid oklch(1 0 0 / 8%);
+    background: linear-gradient(145deg, oklch(0.15 0.015 260), oklch(0.12 0.01 260));
+    border: 1px solid oklch(1 0 0 / 6%);
   }
 
   .glow-primary {
-    box-shadow: 0 0 20px oklch(0.55 0.2 255 / 15%), 0 0 40px oklch(0.55 0.2 255 / 5%);
+    box-shadow: 0 0 20px oklch(0.55 0.2 265 / 20%), 0 0 40px oklch(0.55 0.2 265 / 10%);
   }
   .dark .glow-primary {
-    box-shadow: 0 0 20px oklch(0.65 0.2 255 / 20%), 0 0 40px oklch(0.65 0.2 255 / 8%);
+    box-shadow: 0 0 24px oklch(0.65 0.2 265 / 25%), 0 0 48px oklch(0.65 0.2 265 / 12%);
   }
 }
 
@@ -189,19 +218,27 @@
   100% { background-position: 200% 0; }
 }
 @keyframes dash-border {
-  0%, 100% { border-color: oklch(0.55 0.2 255 / 60%); }
-  50% { border-color: oklch(0.55 0.2 255); }
+  0%, 100% { border-color: oklch(0.55 0.2 265 / 60%); }
+  50% { border-color: oklch(0.55 0.2 265); }
 }
 @keyframes icon-zoom {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.1); }
 }
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 15px oklch(0.55 0.2 265 / 30%); }
+  50% { box-shadow: 0 0 25px oklch(0.55 0.2 265 / 60%); }
+}
 
 .animate-fade-in {
-  animation: fade-in 0.3s ease-out;
+  animation: fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .animate-slide-up {
-  animation: slide-up 0.4s ease-out;
+  animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .animate-pulse-soft {
   animation: pulse-soft 2s ease-in-out infinite;
@@ -212,8 +249,14 @@
 .animate-icon-zoom {
   animation: icon-zoom 1.2s ease-in-out infinite;
 }
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+.animate-glow-pulse {
+  animation: glow-pulse 2.5s ease-in-out infinite;
+}
 .animate-shimmer {
-  background: linear-gradient(90deg, transparent 25%, oklch(0.55 0.2 255 / 10%) 50%, transparent 75%);
+  background: linear-gradient(90deg, transparent 25%, oklch(0.55 0.2 265 / 15%) 50%, transparent 75%);
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
 }

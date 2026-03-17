@@ -7,11 +7,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import {
   Send, Loader2, AlertCircle, Sparkles, Upload,
-  Briefcase, User, Calendar, CheckCircle2, FileText, Bot,
+  Briefcase, User, Calendar, CheckCircle2, FileText,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useStore } from "@/store/useStore";
 import { toast } from "sonner";
+import { NexusLogo } from "@/components/NexusLogo";
 import type { Message, Conversation, ChatAction } from "@/lib/types";
 
 const WELCOME_MESSAGE: Message = {
@@ -132,15 +133,15 @@ function ActionCard({ result }: { result: ActionResult }) {
   };
   return (
     <div
-      className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-sm animate-fade-in transition-all duration-300 ${
+      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm animate-fade-in transition-all duration-300 shadow-sm border ${
         result.success
-          ? "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/50 dark:text-green-300 dark:border-green-800"
-          : "bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-800"
+          ? "bg-green-50/50 text-green-700 border-green-100 dark:bg-green-950/20 dark:text-green-400 dark:border-green-900/50"
+          : "bg-red-50/50 text-red-700 border-red-100 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/50"
       }`}
     >
       <div
-        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-transform duration-300 ${
-          result.success ? "bg-green-100 dark:bg-green-900" : "bg-red-100 dark:bg-red-900"
+        className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform duration-300 ${
+          result.success ? "bg-green-100 dark:bg-green-900/50" : "bg-red-100 dark:bg-red-900/50"
         }`}
       >
         {result.success ? iconMap[result.action.type] || <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
@@ -152,31 +153,34 @@ function ActionCard({ result }: { result: ActionResult }) {
 
 function WelcomeScreen() {
   return (
-    <div className="flex-1 flex items-center justify-center animate-fade-in">
-      <div className="text-center max-w-md px-6">
-        <div className="w-20 h-20 rounded-2xl gradient-primary flex items-center justify-center mx-auto mb-8 glow-primary shadow-lg">
-          <Bot className="w-10 h-10 text-white" />
+    <div className="flex-1 flex flex-col items-center justify-center animate-fade-in pb-20">
+      <div className="text-center max-w-2xl w-full px-6">
+        <div className="relative w-24 h-24 mx-auto mb-8">
+          <div className="absolute inset-0 gradient-primary rounded-3xl blur-[12px] opacity-40 animate-glow-pulse" />
+          <div className="relative w-full h-full rounded-3xl gradient-primary flex items-center justify-center border-2 border-white/20 shadow-2xl animate-float">
+            <NexusLogo className="w-12 h-12 text-white" />
+          </div>
         </div>
-        <h2 className="text-3xl font-bold gradient-text mb-4">你好，我是小HR</h2>
-        <p className="text-muted-foreground text-base mb-10 leading-relaxed">
-          你的 AI 数字员工，直接说话就能完成工作
+        <h2 className="text-4xl font-black tracking-tight gradient-text mb-4">Welcome to Nexus</h2>
+        <p className="text-muted-foreground text-lg mb-12 font-medium">
+          您的 AI 招聘搭档，对话即可驱动全流程
         </p>
-        <div className="grid grid-cols-2 gap-4 text-left">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-left">
           {[
-            { icon: Briefcase, title: "发布职位", desc: '"招一个Go后端，5年经验"' },
-            { icon: FileText, title: "分析简历", desc: "拖入PDF或粘贴文本" },
-            { icon: Calendar, title: "安排面试", desc: '"给张三安排明天面试"' },
-            { icon: Sparkles, title: "评估候选人", desc: '"张三面试表现如何"' },
+            { icon: Briefcase, title: "发布职位", desc: '"招一个Go后端"' },
+            { icon: FileText, title: "分析简历", desc: "拖入PDF文件" },
+            { icon: Calendar, title: "安排面试", desc: '"给张三安排面试"' },
+            { icon: Sparkles, title: "评估反馈", desc: '"张三表现如何"' },
           ].map(({ icon: Icon, title, desc }) => (
             <div
               key={title}
-              className="gradient-card rounded-xl p-4 hover:shadow-lg transition-all duration-300 cursor-default group hover:-translate-y-0.5"
+              className="glass-panel rounded-2xl p-5 hover:shadow-lg transition-all duration-300 cursor-default group hover:-translate-y-1"
             >
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
                 <Icon className="w-5 h-5 text-primary" />
               </div>
-              <p className="text-sm font-semibold mb-1">{title}</p>
-              <p className="text-xs text-muted-foreground leading-snug">{desc}</p>
+              <p className="text-sm font-bold text-foreground mb-1">{title}</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
             </div>
           ))}
         </div>
@@ -225,7 +229,8 @@ export function ChatInterface() {
     (msgs: Message[]) => {
       const realMessages = msgs.filter((m) => m.id !== "welcome");
       if (realMessages.length === 0) return;
-      const title = realMessages.find((m) => m.role === "user")?.content.slice(0, 30) || "新对话";
+      const firstUserMsg = realMessages.find((m) => m.role === "user")?.content || "";
+      const title = firstUserMsg.length > 20 ? firstUserMsg.slice(0, 20) + "…" : (firstUserMsg || "新对话");
       if (conversationIdRef.current) {
         updateConversation(conversationIdRef.current, { messages: msgs, title });
       } else {
@@ -441,15 +446,18 @@ export function ChatInterface() {
       )}
 
       {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center justify-between glass">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl gradient-primary flex items-center justify-center shadow-sm">
-            <Sparkles className="w-4 h-4 text-white" />
+      <div className="absolute top-0 left-0 right-0 z-10 h-14 border-b border-border/40 px-6 flex items-center justify-between glass">
+        <div className="flex items-center gap-3">
+          <div className="relative flex items-center justify-center w-8 h-8">
+            <div className="absolute inset-0 gradient-primary rounded-xl blur-[4px] opacity-40 animate-pulse" />
+            <div className="relative w-8 h-8 rounded-xl gradient-primary flex items-center justify-center border border-white/20">
+              <Sparkles className="w-4 h-4 text-white" />
+            </div>
           </div>
-          <h2 className="text-sm font-semibold">{currentConversation?.title || "小HR · AI数字员工"}</h2>
+          <h2 className="text-sm font-bold tracking-wide">{currentConversation?.title || "Nexus HR"}</h2>
         </div>
         {currentAgent && (
-          <Badge variant="secondary" className="text-[10px] animate-pulse-soft gap-1.5">
+          <Badge variant="outline" className="text-[10px] animate-pulse-soft gap-2 border-primary/20 bg-primary/5 py-1 px-2.5">
             <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             {currentAgent}
           </Badge>
@@ -460,46 +468,49 @@ export function ChatInterface() {
       {showWelcome ? (
         <WelcomeScreen />
       ) : (
-        <ScrollArea className="flex-1">
-          <div ref={scrollRef} className="max-w-3xl mx-auto p-6 space-y-5">
+        <ScrollArea className="flex-1 pt-14 pb-28">
+          <div ref={scrollRef} className="w-full max-w-[92%] mx-auto p-6 space-y-8">
             {messages
               .filter((m) => m.id !== "welcome")
               .map((message) => (
-                <div key={message.id} className="animate-fade-in">
-                  <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} gap-2.5`}>
+                <div key={message.id} className="animate-fade-in group">
+                  <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} gap-3`}>
                     {message.role === "assistant" && (
-                      <div className="w-8 h-8 rounded-xl gradient-primary flex items-center justify-center shrink-0 mt-1 shadow-sm">
-                        <Bot className="w-4 h-4 text-white" />
+                      <div className="relative shrink-0 mt-1">
+                        <div className="absolute inset-0 gradient-primary rounded-full blur-[4px] opacity-40" />
+                        <div className="relative w-8 h-8 rounded-full gradient-primary flex items-center justify-center border border-white/20 shadow-sm">
+                          <NexusLogo className="w-4 h-4 text-white" />
+                        </div>
                       </div>
                     )}
                     <div
-                      className={`max-w-[78%] rounded-2xl px-4 py-3 ${
+                      className={`max-w-[85%] rounded-2xl px-5 py-4 ${
                         message.role === "user"
-                          ? "gradient-primary text-white shadow-md"
-                          : "gradient-card shadow-sm border border-border/50"
+                          ? "gradient-primary text-white shadow-lg shadow-primary/20 rounded-tr-sm"
+                          : "bg-card shadow-sm border border-border/40 rounded-tl-sm hover:shadow-md transition-shadow"
                       }`}
                     >
                       {message.role === "assistant" ? (
-                        <div className="text-sm prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>ul]:my-1">
+                        <div className="text-sm prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-muted/50 prose-pre:border prose-pre:border-border/50">
                           <ReactMarkdown>{message.content}</ReactMarkdown>
                         </div>
                       ) : (
-                        <p className="text-sm whitespace-pre-wrap">
-                          {message.content.length > 300 ? message.content.slice(0, 300) + "..." : message.content}
+                        <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                          {message.content.length > 500 ? message.content.slice(0, 500) + "..." : message.content}
                         </p>
                       )}
-                      <div className="flex items-center gap-2 mt-1.5 opacity-70">
-                        <span className="text-[10px]">{new Date(message.timestamp).toLocaleTimeString()}</span>
+                      <div className={`flex items-center gap-2 mt-2 opacity-50 ${message.role === "user" ? "justify-end text-white" : "justify-start text-muted-foreground"}`}>
+                        <span className="text-[10px] font-medium tracking-wider">{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         {message.metadata?.agentUsed && (
-                          <Badge variant="outline" className="text-[9px] h-3.5 px-1.5 border-current/50">
+                          <span className="text-[10px] font-medium tracking-wider px-1.5 py-0.5 rounded border border-current/30">
                             {message.metadata.agentUsed}
-                          </Badge>
+                          </span>
                         )}
                       </div>
                     </div>
                   </div>
                   {actionResults[message.id] && (
-                    <div className="ml-12 mt-2 space-y-1.5">
+                    <div className="ml-11 mt-3 space-y-2 max-w-[85%]">
                       {actionResults[message.id].map((result, i) => (
                         <ActionCard key={i} result={result} />
                       ))}
@@ -508,49 +519,55 @@ export function ChatInterface() {
                 </div>
               ))}
             {streamingContent && (
-              <div className="flex justify-start gap-2.5 animate-fade-in">
-                <div className="w-8 h-8 rounded-xl gradient-primary flex items-center justify-center shrink-0 mt-1 shadow-sm">
-                  <Bot className="w-4 h-4 text-white" />
+              <div className="flex justify-start gap-3 animate-fade-in">
+                <div className="relative shrink-0 mt-1">
+                  <div className="absolute inset-0 gradient-primary rounded-full blur-[4px] opacity-60 animate-glow-pulse" />
+                  <div className="relative w-8 h-8 rounded-full gradient-primary flex items-center justify-center border border-white/20 shadow-sm animate-pulse-soft">
+                    <NexusLogo className="w-4 h-4 text-white" />
+                  </div>
                 </div>
-                <div className="max-w-[78%] rounded-2xl px-4 py-3 gradient-card shadow-sm border border-border/50">
-                  <div className="text-sm prose prose-sm dark:prose-invert max-w-none">
+                <div className="max-w-[85%] rounded-2xl rounded-tl-sm px-5 py-4 bg-card shadow-sm border border-primary/20">
+                  <div className="text-sm prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed">
                     <ReactMarkdown>{streamingContent.replace(/<!--ACTION:[\s\S]*?-->/g, "")}</ReactMarkdown>
                   </div>
-                  <div className="flex items-center gap-1.5 mt-1.5 opacity-60">
-                    <div className="flex gap-0.5">
+                  <div className="flex items-center gap-2 mt-3 opacity-60">
+                    <div className="flex gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:150ms]" />
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:300ms]" />
                     </div>
-                    {currentAgent && <span className="text-[10px]">{currentAgent}</span>}
+                    {currentAgent && <span className="text-[10px] font-medium tracking-wider">{currentAgent}</span>}
                   </div>
                 </div>
               </div>
             )}
             {isLoading && !streamingContent && (
-              <div className="flex justify-start gap-2.5 animate-fade-in">
-                <div className="w-8 h-8 rounded-xl gradient-primary flex items-center justify-center shrink-0 animate-pulse-soft shadow-sm">
-                  <Bot className="w-4 h-4 text-white" />
+              <div className="flex justify-start gap-3 animate-fade-in">
+                <div className="relative shrink-0 mt-1">
+                  <div className="absolute inset-0 gradient-primary rounded-full blur-[4px] opacity-60 animate-glow-pulse" />
+                  <div className="relative w-8 h-8 rounded-full gradient-primary flex items-center justify-center border border-white/20 shadow-sm animate-pulse-soft">
+                    <NexusLogo className="w-4 h-4 text-white" />
+                  </div>
                 </div>
-                <div className="gradient-card rounded-2xl px-4 py-3 shadow-sm border border-border/50">
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      <span className="w-2 h-2 rounded-full bg-primary/50 animate-pulse" />
-                      <span className="w-2 h-2 rounded-full bg-primary/50 animate-pulse [animation-delay:150ms]" />
-                      <span className="w-2 h-2 rounded-full bg-primary/50 animate-pulse [animation-delay:300ms]" />
+                <div className="rounded-2xl rounded-tl-sm px-5 py-4 bg-card shadow-sm border border-border/40">
+                  <div className="flex items-center gap-3">
+                    <div className="flex gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-primary/60 animate-pulse" />
+                      <span className="w-2 h-2 rounded-full bg-primary/60 animate-pulse [animation-delay:150ms]" />
+                      <span className="w-2 h-2 rounded-full bg-primary/60 animate-pulse [animation-delay:300ms]" />
                     </div>
-                    <span className="text-xs text-muted-foreground">思考中...</span>
+                    <span className="text-xs font-medium text-muted-foreground tracking-wide">AI 思考中...</span>
                   </div>
                 </div>
               </div>
             )}
             {error && (
-              <div className="flex justify-start gap-2.5 animate-fade-in">
-                <div className="w-8 h-8 rounded-xl bg-destructive/10 flex items-center justify-center shrink-0">
+              <div className="flex justify-start gap-3 animate-fade-in">
+                <div className="w-8 h-8 rounded-full bg-destructive/10 flex items-center justify-center shrink-0 mt-1">
                   <AlertCircle className="w-4 h-4 text-destructive" />
                 </div>
-                <div className="rounded-2xl px-4 py-3 bg-destructive/5 border border-destructive/20">
-                  <span className="text-sm text-destructive">{error}</span>
+                <div className="rounded-2xl rounded-tl-sm px-5 py-3 bg-destructive/5 border border-destructive/20 max-w-[85%]">
+                  <span className="text-sm text-destructive leading-relaxed">{error}</span>
                 </div>
               </div>
             )}
@@ -558,10 +575,10 @@ export function ChatInterface() {
         </ScrollArea>
       )}
 
-      {/* Input */}
-      <div className="border-t border-border p-4 glass">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex gap-2.5">
+      {/* Floating Command Bar */}
+      <div className="absolute bottom-6 left-0 right-0 px-6 pointer-events-none z-20">
+        <div className="w-full max-w-[92%] lg:max-w-3xl mx-auto pointer-events-auto">
+          <div className="glass-panel p-2 rounded-2xl shadow-2xl flex items-end gap-2.5 transition-all duration-300 focus-within:ring-2 focus-within:ring-primary/30 focus-within:shadow-primary/10">
             <input
               ref={fileInputRef}
               type="file"
@@ -571,34 +588,36 @@ export function ChatInterface() {
               onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
             />
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
-              className="h-[52px] w-[52px] shrink-0 rounded-xl hover:border-primary/50 transition-colors"
+              className="h-12 w-12 shrink-0 rounded-xl hover:bg-primary/10 hover:text-primary transition-colors mb-0.5"
               onClick={() => fileInputRef.current?.click()}
-              title="上传简历文件"
+              title="上传简历或文档"
             >
               <FileText className="w-5 h-5" />
             </Button>
             <Textarea
-              placeholder="输入消息，或直接粘贴简历/JD/招聘链接..."
+              placeholder="输入指令，或粘贴内容..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              className="flex-1 min-h-[52px] max-h-[200px] resize-none rounded-xl border-border focus-visible:ring-primary/30"
+              className="flex-1 min-h-[52px] max-h-[160px] resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-3.5 px-2 text-base font-medium placeholder:text-muted-foreground/60"
             />
             <Button
               onClick={() => handleSend()}
               disabled={!input.trim() || isLoading}
               size="icon"
-              className="h-[52px] w-[52px] shrink-0 rounded-xl gradient-primary text-white shadow-md hover:shadow-lg transition-all disabled:opacity-40"
+              className="h-12 w-12 shrink-0 rounded-xl gradient-primary text-white shadow-md hover:shadow-lg transition-all disabled:opacity-30 mb-0.5"
             >
-              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 ml-0.5" />}
             </Button>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-2 text-center">
-            直接说话即可操作 · 拖入/粘贴简历自动分析 · 粘贴招聘URL创建职位 · Ctrl+Enter 发送
-          </p>
+          <div className="text-center mt-3 animate-fade-in">
+            <p className="text-[10px] font-medium text-muted-foreground/60 tracking-wider">
+              支持拖拽文档 · Ctrl+Enter 发送 · 智能识别意图
+            </p>
+          </div>
         </div>
       </div>
     </div>

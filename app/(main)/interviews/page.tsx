@@ -40,15 +40,17 @@ import {
   ChevronDown,
   Check,
   Download,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Interview, Job, Candidate, EvaluationPreset } from "@/lib/types";
 import { exportInterviewToCalendar } from "@/lib/interview-utils";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
-const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  scheduled: { label: "已安排", variant: "default" },
-  completed: { label: "已完成", variant: "secondary" },
-  cancelled: { label: "已取消", variant: "destructive" },
+const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
+  scheduled: { label: "已安排", dot: "bg-blue-500", bg: "bg-blue-500/10", text: "text-blue-600 dark:text-blue-400" },
+  completed: { label: "已完成", dot: "bg-green-500", bg: "bg-green-500/10", text: "text-green-600 dark:text-green-400" },
+  cancelled: { label: "已取消", dot: "bg-muted-foreground", bg: "bg-muted", text: "text-muted-foreground" },
 };
 
 export default function InterviewsPage() {
@@ -67,9 +69,15 @@ export default function InterviewsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
   const [deleting, setDeleting] = useState(false);
+  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState<Interview | null>(null);
+  const [restoreTime, setRestoreTime] = useState("");
 
   useEffect(() => {
     loadData();
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
   }, []);
 
   useEffect(() => {
@@ -211,6 +219,40 @@ export default function InterviewsPage() {
     }
   };
 
+  const openRestoreDialog = (interview: Interview) => {
+    setRestoreTarget(interview);
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 60);
+    now.setMinutes(0, 0, 0);
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    setRestoreTime(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
+    setIsRestoreDialogOpen(true);
+  };
+
+  const handleRestoreConfirm = async () => {
+    if (!restoreTarget || !restoreTime) return;
+    try {
+      const res = await fetch("/api/interviews", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: restoreTarget.id, status: "scheduled", scheduledTime: new Date(restoreTime).toISOString() }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setInterviews(interviews.map((i) => (i.id === restoreTarget.id ? updated : i)));
+        if (selectedInterview?.id === restoreTarget.id) setSelectedInterview(updated);
+        toast.success("面试已恢复");
+        setIsRestoreDialogOpen(false);
+        setRestoreTarget(null);
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "操作失败");
+      }
+    } catch {
+      toast.error("操作失败");
+    }
+  };
+
   const handleGenerateQuestions = async (interview: Interview) => {
     setGeneratingQuestions(true);
     try {
@@ -249,8 +291,8 @@ export default function InterviewsPage() {
   return (
     <div className="flex h-full min-h-0">
       {/* Left: List */}
-      <div className="w-96 border-r border-border flex flex-col min-h-0 overflow-hidden">
-        <div className="p-4 border-b border-border space-y-3">
+      <div className="w-96 border-r border-border/40 bg-muted/10 flex flex-col min-h-0 overflow-hidden">
+        <div className="p-4 border-b border-border/40 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold">面试管理</h1>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -260,7 +302,7 @@ export default function InterviewsPage() {
                   安排面试
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                   <DialogTitle>安排新面试</DialogTitle>
                 </DialogHeader>
@@ -315,47 +357,45 @@ export default function InterviewsPage() {
             {filteredInterviews.map((interview) => (
               <Card
                 key={interview.id}
-                className={`p-3 cursor-pointer transition-colors hover:bg-muted/50 ${
-                  selectedInterview?.id === interview.id ? "ring-2 ring-primary" : ""
+                className={`p-3.5 cursor-pointer transition-all duration-300 border hover:shadow-md hover:-translate-y-0.5 ${
+                  selectedInterview?.id === interview.id ? "border-primary bg-primary/5 shadow-sm" : "border-border/50 hover:border-primary/30"
                 }`}
                 onClick={(e) => handleCardClick(interview, e)}
               >
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-3">
                   <input
                     type="checkbox"
                     checked={selectedIds.has(interview.id)}
                     onChange={() => handleSelectOne(interview.id)}
-                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer"
+                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer transition-colors checked:bg-primary"
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <div className="flex items-start justify-between mb-1 flex-1">
-                    <div>
-                  <h3 className="font-medium text-sm">
+                  <div className="flex items-start justify-between mb-1 flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 pr-2">
+                  <h3 className="font-semibold text-sm truncate">
                     {getCandidateName(interview.candidateId)}
                   </h3>
-                  <Badge
-                    variant={STATUS_CONFIG[interview.status]?.variant || "outline"}
-                    className="text-[10px]"
-                  >
-                    {STATUS_CONFIG[interview.status]?.label}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mb-1">
+                <p className="text-[11px] text-muted-foreground mb-2 truncate">
                   {getJobTitle(interview.jobId)}
                 </p>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
+                <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-primary/70" />
                     {new Date(interview.scheduledTime).toLocaleDateString()}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-primary/70" />
                     {new Date(interview.scheduledTime).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}
                   </span>
                 </div>
+                </div>
+                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border-0 ${STATUS_CONFIG[interview.status]?.bg || "bg-muted"} ${STATUS_CONFIG[interview.status]?.text || "text-muted-foreground"} shrink-0`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[interview.status]?.dot || "bg-muted-foreground"}`} />
+                    <span className="text-[10px] font-semibold">{STATUS_CONFIG[interview.status]?.label || interview.status}</span>
+                  </div>
                 </div>
                 </div>
               </Card>
@@ -383,13 +423,12 @@ export default function InterviewsPage() {
                   <h2 className="text-2xl font-bold mb-1">
                     {getCandidateName(selectedInterview.candidateId)}
                   </h2>
-                  <div className="flex gap-2 items-center">
-                    <Badge
-                      variant={STATUS_CONFIG[selectedInterview.status]?.variant || "outline"}
-                    >
-                      {STATUS_CONFIG[selectedInterview.status]?.label}
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
+                  <div className="flex gap-3 items-center mt-2">
+                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border-0 ${STATUS_CONFIG[selectedInterview.status]?.bg || "bg-muted"} ${STATUS_CONFIG[selectedInterview.status]?.text || "text-muted-foreground"}`}>
+                      <span className={`w-2 h-2 rounded-full ${STATUS_CONFIG[selectedInterview.status]?.dot || "bg-muted-foreground"}`} />
+                      <span className="text-xs font-semibold">{STATUS_CONFIG[selectedInterview.status]?.label || selectedInterview.status}</span>
+                    </div>
+                    <span className="text-sm font-medium text-muted-foreground bg-muted/30 px-3 py-1 rounded-full border border-border/50">
                       {getJobTitle(selectedInterview.jobId)}
                     </span>
                   </div>
@@ -423,6 +462,16 @@ export default function InterviewsPage() {
                       </Button>
                     </>
                   )}
+                  {selectedInterview.status === "cancelled" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openRestoreDialog(selectedInterview)}
+                    >
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      恢复
+                    </Button>
+                  )}
                   <Button
                     variant="destructive"
                     size="sm"
@@ -435,7 +484,7 @@ export default function InterviewsPage() {
             </div>
 
             <ScrollArea className="flex-1 p-6">
-              <div className="max-w-3xl space-y-6">
+              <div className="space-y-6">
                 <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "info" | "questions" | "voice")}>
                   <TabsList className="mb-4">
                     <TabsTrigger value="info">面试信息</TabsTrigger>
@@ -638,12 +687,13 @@ export default function InterviewsPage() {
                       <div>
                         <div className="text-xs font-medium mb-1">推荐决策</div>
                         <Badge
-                          variant={
+                          variant="outline"
+                          className={`border-0 ${
                             selectedInterview.feedback.recommendation === "strong_hire" ||
                             selectedInterview.feedback.recommendation === "hire"
-                              ? "default"
-                              : "destructive"
-                          }
+                              ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                              : "bg-red-500/10 text-red-600 dark:text-red-400"
+                          }`}
                         >
                           {
                             {
@@ -724,8 +774,66 @@ export default function InterviewsPage() {
         onConfirm={confirmDelete}
         variant="destructive"
       />
+
+      <Dialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <RefreshCw className="w-4 h-4 text-primary" />
+              </div>
+              恢复面试
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {restoreTarget && (
+              <div className="rounded-xl bg-muted/30 border border-border/30 p-3 text-sm">
+                <span className="font-medium">{restoreTarget.candidateName || restoreTarget.candidateId}</span>
+                {restoreTarget.jobTitle && <span className="text-muted-foreground"> · {restoreTarget.jobTitle}</span>}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5 text-primary" />重新选择面试时间
+              </Label>
+              <DateTimePicker
+                value={restoreTime}
+                onChange={setRestoreTime}
+                placeholder="选择新的面试时间"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsRestoreDialogOpen(false)}>取消</Button>
+            <Button onClick={handleRestoreConfirm} disabled={!restoreTime}>
+              <RefreshCw className="w-4 h-4 mr-1" />
+              确认恢复
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function scheduleInterviewReminder(scheduledTime: string, candidateId: string, candidates: Candidate[]) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+  const interviewTime = new Date(scheduledTime).getTime();
+  const reminderTime = interviewTime - 15 * 60 * 1000; // 15 min before
+  const delay = reminderTime - Date.now();
+  if (delay <= 0) return;
+  const candidateName = candidates.find(c => c.id === candidateId)?.name || "候选人";
+  setTimeout(() => {
+    if (Notification.permission === "granted") {
+      new Notification("Nexus HR - 面试提醒", {
+        body: `${candidateName} 的面试将在 15 分钟后开始`,
+        icon: "/favicon.ico",
+      });
+    }
+  }, delay);
 }
 
 // ==================== Create Interview Form ====================
@@ -779,6 +887,7 @@ function CreateInterviewForm({
 
       if (res.ok) {
         toast.success("面试已安排");
+        scheduleInterviewReminder(scheduledTime, candidateId, candidates);
         onSuccess();
       } else {
         const data = await res.json();
@@ -792,60 +901,122 @@ function CreateInterviewForm({
   };
 
   const activeJobs = jobs.filter((j) => j.status === "active");
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [jobSearch, setJobSearch] = useState("");
+
+  const filteredCandidates = candidates.filter(c => {
+    if (!candidateSearch) return true;
+    const q = candidateSearch.toLowerCase();
+    return c.name.toLowerCase().includes(q) || c.contact?.email?.toLowerCase().includes(q);
+  });
+
+  const filteredJobs = activeJobs.filter(j => {
+    if (!jobSearch) return true;
+    const q = jobSearch.toLowerCase();
+    return j.title.toLowerCase().includes(q) || j.department?.toLowerCase().includes(q);
+  });
+
+  const selectedCandidateName = candidates.find(c => c.id === candidateId)?.name;
+  const selectedJobTitle = activeJobs.find(j => j.id === jobId)?.title;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <Label>候选人 *</Label>
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Candidate Select */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium flex items-center gap-2">
+          <User className="w-3.5 h-3.5 text-primary" />候选人
+        </Label>
         <Select value={candidateId} onValueChange={setCandidateId}>
-          <SelectTrigger>
+          <SelectTrigger className="w-full h-10">
             <SelectValue placeholder="选择候选人" />
           </SelectTrigger>
           <SelectContent>
-            {candidates.map((c) => (
+            <div className="p-2 border-b border-border/40">
+              <Input
+                placeholder="搜索候选人..."
+                value={candidateSearch}
+                onChange={(e) => setCandidateSearch(e.target.value)}
+                className="h-8"
+                onKeyDown={(e) => e.stopPropagation()}
+              />
+            </div>
+            {filteredCandidates.length === 0 && (
+              <div className="py-3 text-center text-xs text-muted-foreground">无匹配候选人</div>
+            )}
+            {filteredCandidates.map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.name} ({c.contact.email})
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                    {c.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="font-medium">{c.name}</span>
+                    {c.contact?.email && <span className="text-muted-foreground ml-1.5 text-xs">{c.contact.email}</span>}
+                  </div>
+                </div>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
-      <div>
-        <Label>面试职位 *</Label>
+      {/* Job Select */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium flex items-center gap-2">
+          <MapPin className="w-3.5 h-3.5 text-primary" />面试职位
+        </Label>
         <Select value={jobId} onValueChange={setJobId}>
-          <SelectTrigger>
+          <SelectTrigger className="w-full h-10">
             <SelectValue placeholder="选择职位" />
           </SelectTrigger>
           <SelectContent>
-            {activeJobs.map((j) => (
+            <div className="p-2 border-b border-border/40">
+              <Input
+                placeholder="搜索职位..."
+                value={jobSearch}
+                onChange={(e) => setJobSearch(e.target.value)}
+                className="h-8"
+                onKeyDown={(e) => e.stopPropagation()}
+              />
+            </div>
+            {filteredJobs.length === 0 && (
+              <div className="py-3 text-center text-xs text-muted-foreground">无匹配职位</div>
+            )}
+            {filteredJobs.map((j) => (
               <SelectItem key={j.id} value={j.id}>
-                {j.title} ({j.department})
+                <span className="font-medium">{j.title}</span>
+                <span className="text-muted-foreground ml-1.5 text-xs">· {j.department}</span>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
-      <div>
-        <Label>面试时间 *</Label>
-        <Input
-          type="datetime-local"
+      {/* Time */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium flex items-center gap-2">
+          <Clock className="w-3.5 h-3.5 text-primary" />面试时间
+        </Label>
+        <DateTimePicker
           value={scheduledTime}
-          onChange={(e) => setScheduledTime(e.target.value)}
-          required
+          onChange={setScheduledTime}
+          placeholder="选择面试日期和时间"
         />
       </div>
 
+      {/* Evaluation Preset */}
       {evaluationPresets.length > 0 && (
-        <div>
-          <Label>评估维度预设</Label>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />评估预设
+            <span className="text-xs text-muted-foreground font-normal">（可选）</span>
+          </Label>
           <Select value={evaluationPresetId} onValueChange={setEvaluationPresetId}>
-            <SelectTrigger>
-              <SelectValue placeholder="选择评估预设（可选）" />
+            <SelectTrigger className="w-full h-10">
+              <SelectValue placeholder="选择评估预设" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">无</SelectItem>
+              <SelectItem value="">默认评估</SelectItem>
               {evaluationPresets.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name}
@@ -856,13 +1027,23 @@ function CreateInterviewForm({
         </div>
       )}
 
-      <div className="flex justify-end gap-2">
+      {/* Summary Preview */}
+      {(candidateId || jobId) && (
+        <div className="rounded-xl bg-muted/30 border border-border/30 p-3 text-xs text-muted-foreground animate-fade-in">
+          {selectedCandidateName && <span className="font-medium text-foreground">{selectedCandidateName}</span>}
+          {selectedCandidateName && selectedJobTitle && <span> → </span>}
+          {selectedJobTitle && <span className="font-medium text-foreground">{selectedJobTitle}</span>}
+          {scheduledTime && <span className="ml-2">· {new Date(scheduledTime).toLocaleString("zh-CN")}</span>}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
           取消
         </Button>
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading || !candidateId || !jobId}>
           {loading && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-          创建
+          创建面试
         </Button>
       </div>
     </form>

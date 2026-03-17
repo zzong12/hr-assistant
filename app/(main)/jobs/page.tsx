@@ -21,11 +21,11 @@ import {
 import { toast } from "sonner";
 import type { Job, Candidate } from "@/lib/types";
 
-const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  active: { label: "招聘中", variant: "default" },
-  draft: { label: "草稿", variant: "outline" },
-  paused: { label: "暂停", variant: "secondary" },
-  closed: { label: "已关闭", variant: "destructive" },
+const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
+  active: { label: "招聘中", dot: "bg-green-500", bg: "bg-green-500/10", text: "text-green-600 dark:text-green-400" },
+  draft: { label: "草稿", dot: "bg-muted-foreground", bg: "bg-muted", text: "text-muted-foreground" },
+  paused: { label: "暂停", dot: "bg-amber-500", bg: "bg-amber-500/10", text: "text-amber-600 dark:text-amber-400" },
+  closed: { label: "已关闭", dot: "bg-red-500", bg: "bg-red-500/10", text: "text-red-600 dark:text-red-400" },
 };
 
 export default function JobsPage() {
@@ -154,8 +154,8 @@ export default function JobsPage() {
 
   return (
     <div className="flex h-full min-h-0">
-      <div className="w-96 border-r border-border flex flex-col min-h-0 overflow-hidden">
-        <div className="p-4 border-b border-border space-y-3">
+      <div className="w-96 border-r border-border/40 bg-muted/10 flex flex-col min-h-0 overflow-hidden">
+        <div className="p-4 border-b border-border/40 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold flex items-center gap-2"><Briefcase className="w-5 h-5" />职位管理</h1>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -213,28 +213,37 @@ export default function JobsPage() {
             ) : filtered.map((job) => (
               <Card
                 key={job.id}
-                className={`p-3 cursor-pointer hover:bg-accent transition-all duration-200 transition-colors ${selectedJob?.id === job.id ? "bg-accent" : ""}`}
+                className={`p-3.5 cursor-pointer transition-all duration-300 border hover:shadow-md hover:-translate-y-0.5 ${
+                  selectedJob?.id === job.id ? "border-primary bg-primary/5 shadow-sm" : "border-border/50 hover:border-primary/30"
+                }`}
                 onClick={(e) => handleCardClick(job, e)}
               >
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-3">
                   <input
                     type="checkbox"
                     checked={selectedIds.has(job.id)}
                     onChange={() => handleSelectOne(job.id)}
-                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer"
+                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer transition-colors checked:bg-primary"
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <div className="flex justify-between items-start flex-1">
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <p className="font-medium text-sm truncate">{job.title}</p>
-                    <p className="text-xs text-muted-foreground">{job.department}</p>
+                  <div className="flex items-start justify-between mb-1 flex-1 min-w-0">
+                    <div className="space-y-1.5 min-w-0 flex-1 pr-2">
+                    <p className="font-semibold text-sm truncate">{job.title}</p>
+                    <p className="text-[11px] text-muted-foreground font-medium">{job.department}</p>
                     {job.skills?.length > 0 && (
-                      <div className="flex flex-wrap gap-1">{job.skills.slice(0, 3).map((s) => <Badge key={s} variant="outline" className="text-[10px] h-4">{s}</Badge>)}</div>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {job.skills.slice(0, 3).map((s) => (
+                          <Badge key={s} variant="outline" className="text-[9px] h-4 px-1.5 bg-background/50 border-border/50 font-normal">
+                            {s}
+                          </Badge>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  <Badge variant={STATUS_CONFIG[job.status]?.variant || "outline"} className="text-[10px] shrink-0 ml-2">
-                    {STATUS_CONFIG[job.status]?.label || job.status}
-                  </Badge>
+                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border-0 ${STATUS_CONFIG[job.status]?.bg || "bg-muted"} ${STATUS_CONFIG[job.status]?.text || "text-muted-foreground"} shrink-0`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[job.status]?.dot || "bg-muted-foreground"}`} />
+                    <span className="text-[10px] font-semibold">{STATUS_CONFIG[job.status]?.label || job.status}</span>
+                  </div>
                 </div>
                 </div>
               </Card>
@@ -256,7 +265,12 @@ export default function JobsPage() {
                   </div>
                   <div className="flex gap-2">
                     <Select value={selectedJob.status} onValueChange={(v) => handleStatusChange(selectedJob.id, v)}>
-                      <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className={`w-32 h-8 rounded-full border-0 ${STATUS_CONFIG[selectedJob.status]?.bg || "bg-muted"} ${STATUS_CONFIG[selectedJob.status]?.text || "text-muted-foreground"}`}>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${STATUS_CONFIG[selectedJob.status]?.dot || "bg-muted-foreground"}`} />
+                          <span className="text-xs font-semibold">{STATUS_CONFIG[selectedJob.status]?.label || selectedJob.status}</span>
+                        </div>
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="active">招聘中</SelectItem>
                         <SelectItem value="draft">草稿</SelectItem>

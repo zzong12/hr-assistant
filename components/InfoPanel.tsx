@@ -18,10 +18,10 @@ interface Stats {
 }
 
 const STAT_CONFIG = [
-  { label: "活跃职位", key: "activeJobs" as const, icon: Briefcase, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/50" },
-  { label: "候选人", key: "totalCandidates" as const, icon: Users, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-900/50" },
-  { label: "今日面试", key: "todayInterviews" as const, icon: Calendar, color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/50" },
-  { label: "待处理", key: "pendingItems" as const, icon: FileText, color: "text-orange-600", bg: "bg-orange-100 dark:bg-orange-900/50" },
+  { label: "活跃职位", key: "activeJobs" as const, icon: Briefcase, color: "text-blue-500", bg: "bg-blue-500/10" },
+  { label: "候选人", key: "totalCandidates" as const, icon: Users, color: "text-emerald-500", bg: "bg-emerald-500/10" },
+  { label: "今日面试", key: "todayInterviews" as const, icon: Calendar, color: "text-purple-500", bg: "bg-purple-500/10" },
+  { label: "待处理", key: "pendingItems" as const, icon: FileText, color: "text-orange-500", bg: "bg-orange-500/10" },
 ];
 
 export function InfoPanel() {
@@ -57,48 +57,51 @@ export function InfoPanel() {
   };
 
   return (
-    <div className="w-72 border-l border-border bg-card/50 flex flex-col min-h-0 overflow-hidden">
-      <div className="h-14 border-b border-border px-4 flex items-center justify-between glass">
+    <div className="hidden lg:flex w-[300px] border-l border-border/40 bg-background/40 backdrop-blur-3xl flex-col min-h-0 overflow-hidden shadow-[-10px_0_30px_-15px_rgba(0,0,0,0.05)]">
+      <div className="h-16 px-5 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-primary" />
-          <h2 className="text-sm font-semibold">数据概览</h2>
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+            <TrendingUp className="w-4 h-4 text-primary" />
+          </div>
+          <h2 className="text-sm font-bold tracking-wide">数据看板</h2>
         </div>
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-4 space-y-5">
+        <div className="p-5 pt-0 space-y-8">
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 gap-3">
             {STAT_CONFIG.map(({ label, key, icon: Icon, color, bg }) => (
-              <Card key={label} className="p-3 gradient-card hover:shadow-md transition-all duration-300">
-                <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center mb-2`}>
-                  <Icon className={`w-4 h-4 ${color}`} />
+              <div key={label} className="p-4 rounded-2xl bg-card border border-border/30 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
+                <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center mb-3`}>
+                  <Icon className={`w-5 h-5 ${color}`} />
                 </div>
-                <p className="text-xl font-bold">{stats[key]}</p>
-                <p className="text-[10px] text-muted-foreground">{label}</p>
-              </Card>
+                <p className="text-2xl font-black font-mono tracking-tight">{stats[key]}</p>
+                <p className="text-[11px] font-medium text-muted-foreground mt-0.5">{label}</p>
+              </div>
             ))}
           </div>
 
           {/* Quick actions on chat page */}
           {pathname === "/" && (
             <div>
-              <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                快捷操作
-              </h3>
-              <div className="space-y-1.5">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-4 h-4 text-primary" />
+                <h3 className="text-xs font-bold text-foreground">快速指令</h3>
+              </div>
+              <div className="space-y-2">
                 {[
-                  { icon: Sparkles, label: "生成 JD", desc: "\"招一个Go后端\"" },
-                  { icon: FileText, label: "分析简历", desc: "拖入PDF文件" },
-                  { icon: Calendar, label: "安排面试", desc: "\"给张三安排面试\"" },
-                  { icon: Bot, label: "自由对话", desc: "任何HR问题" },
+                  { icon: Briefcase, label: "生成 JD", desc: '"招一个Go后端"' },
+                  { icon: FileText, label: "分析简历", desc: "拖拽/粘贴内容" },
+                  { icon: Calendar, label: "安排面试", desc: '"给张三安排面试"' },
+                  { icon: Bot, label: "自由对话", desc: "询问任何HR问题" },
                 ].map(({ icon: Icon, label, desc }) => (
-                  <div key={label} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-accent transition-colors cursor-default">
-                    <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                      <Icon className="w-3.5 h-3.5 text-primary" />
+                  <div key={label} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border/20 bg-muted/20 hover:bg-primary/5 hover:border-primary/20 transition-all cursor-default group">
+                    <div className="w-8 h-8 rounded-lg bg-background shadow-sm border border-border/50 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                      <Icon className="w-4 h-4 text-primary" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-medium">{label}</p>
+                      <p className="text-sm font-semibold">{label}</p>
                       <p className="text-[10px] text-muted-foreground truncate">{desc}</p>
                     </div>
                   </div>
@@ -110,20 +113,20 @@ export function InfoPanel() {
           {/* Recent Jobs */}
           {recentJobs.length > 0 && (
             <div>
-              <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">最近职位</h3>
-              <div className="space-y-1.5">
+              <h3 className="text-xs font-bold text-foreground mb-3 px-1">最近发布</h3>
+              <div className="space-y-2">
                 {recentJobs.map((job) => (
-                  <Card key={job.id} className="p-2.5 hover:shadow-sm transition-all duration-200">
-                    <div className="flex items-start justify-between gap-1">
+                  <div key={job.id} className="group relative p-3 rounded-xl hover:bg-muted/50 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium truncate">{job.title}</p>
-                        <p className="text-[10px] text-muted-foreground">{job.department}</p>
+                        <p className="text-sm font-semibold truncate group-hover:text-primary transition-colors">{job.title}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{job.department}</p>
                       </div>
-                      <Badge variant={job.status === "active" ? "default" : "secondary"} className="text-[9px] h-4 px-1 shrink-0">
-                        {job.status === "active" ? "招聘中" : job.status === "draft" ? "草稿" : job.status === "paused" ? "暂停" : "已关闭"}
+                      <Badge variant="outline" className={`text-[9px] h-5 px-1.5 shrink-0 rounded-full border-0 ${job.status === "active" ? "bg-green-500/10 text-green-600" : "bg-muted text-muted-foreground"}`}>
+                        {job.status === "active" ? "招聘中" : job.status === "draft" ? "草稿" : "已暂停"}
                       </Badge>
                     </div>
-                  </Card>
+                  </div>
                 ))}
               </div>
             </div>
@@ -132,35 +135,23 @@ export function InfoPanel() {
           {/* Upcoming Interviews */}
           {upcomingInterviews.length > 0 && (
             <div>
-              <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">即将面试</h3>
-              <div className="space-y-1.5">
-                {upcomingInterviews.map((interview) => (
-                  <Card key={interview.id} className="p-2.5 hover:shadow-sm transition-all duration-200">
-                    <p className="text-xs font-medium truncate">{interview.candidateName || interview.candidateId}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {new Date(interview.scheduledTime).toLocaleDateString()} {new Date(interview.scheduledTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </p>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Recent Candidates */}
-          {recentCandidates.length > 0 && pathname.startsWith("/candidates") && (
-            <div>
-              <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">最近候选人</h3>
-              <div className="space-y-1.5">
-                {recentCandidates.map((c) => (
-                  <Card key={c.id} className="p-2.5 hover:shadow-sm transition-all duration-200">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium">{c.name}</p>
-                      {c.matchedJobs?.[0] && (
-                        <Badge variant="outline" className="text-[9px] h-4 px-1 text-primary border-primary/30">{c.matchedJobs[0].score}分</Badge>
-                      )}
+              <h3 className="text-xs font-bold text-foreground mb-3 px-1">日程安排</h3>
+              <div className="space-y-2">
+                {upcomingInterviews.map((interview) => {
+                  const date = new Date(interview.scheduledTime);
+                  return (
+                    <div key={interview.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-muted/50 transition-colors">
+                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex flex-col items-center justify-center shrink-0">
+                        <span className="text-[10px] font-bold text-purple-600 uppercase">{date.toLocaleDateString('en-US', { month: 'short' })}</span>
+                        <span className="text-xs font-black text-purple-700">{date.getDate()}</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold truncate">{interview.candidateName || interview.candidateId}</p>
+                        <p className="text-[11px] text-muted-foreground">{date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                      </div>
                     </div>
-                  </Card>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

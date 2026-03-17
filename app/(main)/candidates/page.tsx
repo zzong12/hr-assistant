@@ -21,13 +21,13 @@ import {
 import { toast } from "sonner";
 import type { Candidate, Job } from "@/lib/types";
 
-const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "待筛选", variant: "outline" },
-  screening: { label: "筛选中", variant: "secondary" },
-  interview: { label: "面试中", variant: "default" },
-  offered: { label: "已发Offer", variant: "default" },
-  hired: { label: "已录用", variant: "default" },
-  rejected: { label: "已淘汰", variant: "destructive" },
+const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
+  pending: { label: "待筛选", dot: "bg-muted-foreground", bg: "bg-muted", text: "text-muted-foreground" },
+  screening: { label: "筛选中", dot: "bg-blue-500", bg: "bg-blue-500/10", text: "text-blue-600 dark:text-blue-400" },
+  interview: { label: "面试中", dot: "bg-purple-500", bg: "bg-purple-500/10", text: "text-purple-600 dark:text-purple-400" },
+  offered: { label: "已发Offer", dot: "bg-emerald-500", bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400" },
+  hired: { label: "已录用", dot: "bg-green-500", bg: "bg-green-500/10", text: "text-green-600 dark:text-green-400" },
+  rejected: { label: "已淘汰", dot: "bg-red-500", bg: "bg-red-500/10", text: "text-red-600 dark:text-red-400" },
 };
 
 export default function CandidatesPage() {
@@ -246,8 +246,8 @@ export default function CandidatesPage() {
 
   return (
     <div className="flex h-full min-h-0">
-      <div className="w-96 border-r border-border flex flex-col min-h-0 overflow-hidden">
-        <div className="p-4 border-b border-border space-y-3">
+      <div className="w-96 border-r border-border/40 bg-muted/10 flex flex-col min-h-0 overflow-hidden">
+        <div className="p-4 border-b border-border/40 space-y-3">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5" />候选人</h1>
             <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
@@ -340,29 +340,38 @@ export default function CandidatesPage() {
               const scoreColor = topScore >= 80 ? "text-green-600" : topScore >= 60 ? "text-amber-600" : topScore >= 0 ? "text-red-500" : "text-muted-foreground";
               const scoreBg = topScore >= 80 ? "bg-green-50 dark:bg-green-950/50" : topScore >= 60 ? "bg-amber-50 dark:bg-amber-950/50" : "";
               return (
-              <Card key={c.id} className={`p-3 cursor-pointer hover:bg-accent transition-colors ${selectedCandidate?.id === c.id ? "bg-accent" : ""} ${scoreBg}`} onClick={(e) => handleCardClick(c, e)}>
-                <div className="flex items-start gap-2">
+              <Card
+                key={c.id}
+                className={`p-3.5 cursor-pointer transition-all duration-300 border hover:shadow-md hover:-translate-y-0.5 ${
+                  selectedCandidate?.id === c.id ? "border-primary bg-primary/5 shadow-sm" : "border-border/50 hover:border-primary/30"
+                } ${scoreBg}`}
+                onClick={(e) => handleCardClick(c, e)}
+              >
+                <div className="flex items-start gap-3">
                   <input
                     type="checkbox"
                     checked={selectedIds.has(c.id)}
                     onChange={() => handleSelectOne(c.id)}
-                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer"
+                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer transition-colors checked:bg-primary"
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <div className="flex justify-between items-start flex-1">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm truncate">{c.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{c.resume?.parsedData?.skills?.slice(0, 3).join(", ") || "待分析"}</p>
+                  <div className="flex items-start justify-between mb-1 flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 pr-2">
+                    <p className="font-semibold text-sm truncate">{c.name}</p>
+                    <p className="text-[11px] text-muted-foreground truncate font-medium">{c.resume?.parsedData?.skills?.slice(0, 3).join(" · ") || "待分析"}</p>
                     {topScore >= 0 && (
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className={`text-xs font-semibold ${scoreColor}`}>{topScore}分</span>
-                        {topJob && <span className="text-[10px] text-muted-foreground truncate">· {topJob}</span>}
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <Badge variant="outline" className={`text-[10px] h-4 px-1.5 border-0 bg-background/50 ${scoreColor}`}>
+                          {topScore} 分
+                        </Badge>
+                        {topJob && <span className="text-[10px] text-muted-foreground truncate">{topJob}</span>}
                       </div>
                     )}
                   </div>
-                  <Badge variant={STATUS_CONFIG[c.status]?.variant || "outline"} className="text-[10px] shrink-0 ml-2">
-                    {STATUS_CONFIG[c.status]?.label || c.status}
-                  </Badge>
+                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border-0 ${STATUS_CONFIG[c.status]?.bg || "bg-muted"} ${STATUS_CONFIG[c.status]?.text || "text-muted-foreground"} shrink-0`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[c.status]?.dot || "bg-muted-foreground"}`} />
+                    <span className="text-[10px] font-semibold">{STATUS_CONFIG[c.status]?.label || c.status}</span>
+                  </div>
                 </div>
                 </div>
               </Card>
@@ -375,7 +384,7 @@ export default function CandidatesPage() {
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {selectedCandidate ? (
           <ScrollArea className="flex-1 p-6">
-            <div className="max-w-2xl mx-auto space-y-6">
+            <div className="space-y-6">
               <div className="flex justify-between items-start">
                 <div>
                   <h2 className="text-2xl font-bold">{selectedCandidate.name}</h2>
@@ -386,7 +395,12 @@ export default function CandidatesPage() {
                 </div>
                 <div className="flex gap-2">
                   <Select value={selectedCandidate.status} onValueChange={(v) => handleStatusChange(selectedCandidate.id, v)}>
-                    <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className={`w-32 h-8 rounded-full border-0 ${STATUS_CONFIG[selectedCandidate.status]?.bg || "bg-muted"} ${STATUS_CONFIG[selectedCandidate.status]?.text || "text-muted-foreground"}`}>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${STATUS_CONFIG[selectedCandidate.status]?.dot || "bg-muted-foreground"}`} />
+                        <span className="text-xs font-semibold">{STATUS_CONFIG[selectedCandidate.status]?.label || selectedCandidate.status}</span>
+                      </div>
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pending">待筛选</SelectItem>
                       <SelectItem value="screening">筛选中</SelectItem>
@@ -448,7 +462,11 @@ export default function CandidatesPage() {
                     <Card key={i} className="p-3 space-y-2">
                       <div className="flex justify-between items-center">
                         <span className="font-medium text-sm">{m.jobTitle || m.jobId}</span>
-                        <Badge variant={m.score >= 80 ? "default" : m.score >= 60 ? "secondary" : "outline"}>{m.score}分</Badge>
+                        <Badge variant="outline" className={`border-0 ${
+                          m.score >= 80 ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+                          m.score >= 60 ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
+                          "bg-muted text-muted-foreground"
+                        }`}>{m.score}分</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">{m.reason}</p>
                       {((m.pros?.length ?? 0) > 0 || (m.cons?.length ?? 0) > 0) && (
