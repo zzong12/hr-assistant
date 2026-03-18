@@ -16,7 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Users, Upload, Search, Loader2, FileText, Sparkles, Trash2, RefreshCw, Check,
+  Users, Upload, Search, Loader2, FileText, Sparkles, Trash2, Edit, X, Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Candidate, Job } from "@/lib/types";
@@ -49,6 +49,9 @@ export default function CandidatesPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
   const [deleting, setDeleting] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<any>(null);
 
   const loadData = async () => {
     try {
@@ -222,6 +225,108 @@ export default function CandidatesPage() {
     setIsUploadOpen(false);
     loadData();
     if (newCandidate) setSelectedCandidate(newCandidate);
+  };
+
+  const handleEdit = () => {
+    if (!selectedCandidate) return;
+    setEditForm({
+      name: selectedCandidate.name,
+      email: selectedCandidate.contact?.email || "",
+      phone: selectedCandidate.contact?.phone || "",
+      summary: selectedCandidate.resume?.parsedData?.summary || "",
+      skills: selectedCandidate.resume?.parsedData?.skills?.join(", ") || "",
+      experience: selectedCandidate.resume?.parsedData?.experience || [],
+      education: selectedCandidate.resume?.parsedData?.education || [],
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedCandidate || !editForm) return;
+    setEditing(true);
+    try {
+      const parsedData = {
+        summary: editForm.summary,
+        skills: editForm.skills.split(",").map((s: string) => s.trim()).filter((s: string) => s),
+        experience: editForm.experience,
+        education: editForm.education,
+      };
+
+      const res = await fetch("/api/candidates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedCandidate.id,
+          name: editForm.name,
+          contact: {
+            email: editForm.email,
+            phone: editForm.phone || undefined,
+          },
+          resume: {
+            ...selectedCandidate.resume,
+            parsedData,
+          },
+        }),
+      });
+
+      if (!res.ok) throw new Error("保存失败");
+
+      const data = await res.json();
+      toast.success("已保存");
+      setSelectedCandidate(data);
+      loadData();
+      setIsEditDialogOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  const addExperience = () => {
+    setEditForm({
+      ...editForm,
+      experience: [
+        ...(editForm.experience || []),
+        { company: "", position: "", duration: "", description: "" },
+      ],
+    });
+  };
+
+  const removeExperience = (index: number) => {
+    setEditForm({
+      ...editForm,
+      experience: editForm.experience.filter((_: any, i: number) => i !== index),
+    });
+  };
+
+  const updateExperience = (index: number, field: string, value: string) => {
+    const updated = [...editForm.experience];
+    updated[index] = { ...updated[index], [field]: value };
+    setEditForm({ ...editForm, experience: updated });
+  };
+
+  const addEducation = () => {
+    setEditForm({
+      ...editForm,
+      education: [
+        ...(editForm.education || []),
+        { school: "", degree: "", major: "", graduation: "" },
+      ],
+    });
+  };
+
+  const removeEducation = (index: number) => {
+    setEditForm({
+      ...editForm,
+      education: editForm.education.filter((_: any, i: number) => i !== index),
+    });
+  };
+
+  const updateEducation = (index: number, field: string, value: string) => {
+    const updated = [...editForm.education];
+    updated[index] = { ...updated[index], [field]: value };
+    setEditForm({ ...editForm, education: updated });
   };
 
   const filtered = candidates.filter((c) => {
@@ -410,6 +515,7 @@ export default function CandidatesPage() {
                       <SelectItem value="rejected">已淘汰</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Button variant="outline" size="icon" onClick={handleEdit}><Edit className="w-4 h-4" /></Button>
                   <Button variant="destructive" size="icon" onClick={() => handleDelete(selectedCandidate.id)}><Trash2 className="w-4 h-4" /></Button>
                 </div>
               </div>
@@ -521,6 +627,93 @@ export default function CandidatesPage() {
         onConfirm={confirmDelete}
         variant="destructive"
       />
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>编辑候选人信息</DialogTitle></DialogHeader>
+          {editForm && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">姓名</label>
+                  <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">邮箱</label>
+                  <Input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">手机</label>
+                <Input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">简历摘要</label>
+                <Textarea value={editForm.summary} onChange={(e) => setEditForm({ ...editForm, summary: e.target.value })} className="min-h-[80px]" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">技能（用逗号分隔）</label>
+                <Input value={editForm.skills} onChange={(e) => setEditForm({ ...editForm, skills: e.target.value })} placeholder="Go, Docker, Kubernetes..." />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">工作经历</label>
+                  <Button size="sm" variant="outline" onClick={addExperience}><Plus className="w-3 h-3 mr-1" />添加</Button>
+                </div>
+                {editForm.experience?.map((exp: any, i: number) => (
+                  <Card key={i} className="p-3 space-y-2 relative">
+                    <Button
+                      size="sm" variant="ghost" className="absolute top-2 right-2 h-6 w-6 p-0"
+                      onClick={() => removeExperience(i)}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                    <div className="grid grid-cols-2 gap-2 pr-6">
+                      <Input placeholder="公司" value={exp.company} onChange={(e) => updateExperience(i, "company", e.target.value)} />
+                      <Input placeholder="职位" value={exp.position} onChange={(e) => updateExperience(i, "position", e.target.value)} />
+                    </div>
+                    <Input placeholder="工作时长（如：2020.01-2023.12）" value={exp.duration} onChange={(e) => updateExperience(i, "duration", e.target.value)} />
+                    <Textarea placeholder="工作描述" value={exp.description} onChange={(e) => updateExperience(i, "description", e.target.value)} className="min-h-[60px]" />
+                  </Card>
+                ))}
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">教育背景</label>
+                  <Button size="sm" variant="outline" onClick={addEducation}><Plus className="w-3 h-3 mr-1" />添加</Button>
+                </div>
+                {editForm.education?.map((edu: any, i: number) => (
+                  <Card key={i} className="p-3 space-y-2 relative">
+                    <Button
+                      size="sm" variant="ghost" className="absolute top-2 right-2 h-6 w-6 p-0"
+                      onClick={() => removeEducation(i)}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                    <div className="grid grid-cols-2 gap-2 pr-6">
+                      <Input placeholder="学校" value={edu.school} onChange={(e) => updateEducation(i, "school", e.target.value)} />
+                      <Input placeholder="学历（如：本科）" value={edu.degree} onChange={(e) => updateEducation(i, "degree", e.target.value)} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input placeholder="专业" value={edu.major} onChange={(e) => updateEducation(i, "major", e.target.value)} />
+                      <Input placeholder="毕业时间（如：2020.06）" value={edu.graduation || ""} onChange={(e) => updateEducation(i, "graduation", e.target.value)} />
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>取消</Button>
+                <Button onClick={handleSaveEdit} disabled={editing}>
+                  {editing ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />保存中...</> : "保存"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -633,13 +826,17 @@ function ResumeDropZone({ onUploaded }: { onUploaded: (newCandidate?: Candidate)
       {results.length > 0 && (
         <div className="space-y-2">
           <p className="text-sm font-medium">处理结果</p>
-          {results.map((r, i) => (
-            <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded text-sm ${r.success ? "bg-green-50 dark:bg-green-950" : "bg-red-50 dark:bg-red-950"}`}>
-              {r.success ? <FileText className="w-4 h-4 text-green-600" /> : <span className="text-red-600">✗</span>}
-              <span className="font-medium">{r.name}</span>
-              <span className="text-muted-foreground text-xs">{r.message}</span>
+          <ScrollArea className="max-h-[200px]">
+            <div className="space-y-1 pr-4">
+              {results.map((r, i) => (
+                <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded text-sm ${r.success ? "bg-green-50 dark:bg-green-950" : "bg-red-50 dark:bg-red-950"}`}>
+                  {r.success ? <FileText className="w-4 h-4 text-green-600" /> : <span className="text-red-600">✗</span>}
+                  <span className="font-medium">{r.name}</span>
+                  <span className="text-muted-foreground text-xs">{r.message}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          </ScrollArea>
           <Button variant="outline" size="sm" className="w-full" onClick={handleDone}>完成</Button>
         </div>
       )}

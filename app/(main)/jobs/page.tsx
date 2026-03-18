@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,10 +17,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Briefcase, Plus, Search, Loader2, Sparkles, Trash2, Edit, ChevronDown, ChevronUp, Check, Users,
+  Briefcase, Plus, Search, Loader2, Sparkles, Trash2, Edit, ChevronDown, ChevronUp, Users, ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Job, Candidate } from "@/lib/types";
+import { CandidateDetailContent } from "@/components/CandidateDetailContent";
+import type { Job, Candidate, JobMatch } from "@/lib/types";
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
   active: { label: "招聘中", dot: "bg-green-500", bg: "bg-green-500/10", text: "text-green-600 dark:text-green-400" },
@@ -40,6 +42,16 @@ export default function JobsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
   const [deleting, setDeleting] = useState(false);
+
+  // Sheet state for candidate details
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<JobMatch | null>(null);
+
+  // Candidate filter state
+  const [candidateSearchQuery, setCandidateSearchQuery] = useState("");
+  const [candidateScoreFilter, setCandidateScoreFilter] = useState<string>("all");
+  const [candidateSortBy, setCandidateSortBy] = useState<"score" | "name">("score");
 
   const loadJobs = async () => {
     try {
@@ -132,15 +144,81 @@ export default function JobsPage() {
     if (res.ok) { toast.success("状态已更新"); loadJobs(); }
   };
 
+  const openCandidateSheet = (candidate: Candidate, match: JobMatch) => {
+    setSelectedCandidate(candidate);
+    setSelectedMatch(match);
+    setSheetOpen(true);
+  };
+
+  const handleScheduleInterview = () => {
+    // TODO: Open interview scheduling dialog
+    toast.info("面试安排功能开发中");
+  };
+
+  const handleUpdateCandidateStatus = () => {
+    // TODO: Open candidate status update dialog
+    toast.info("状态更新功能开发中");
+  };
+
+  const handleViewResume = () => {
+    if (selectedCandidate?.resume?.filepath) {
+      // Open resume preview
+      toast.info("简历预览功能开发中");
+    } else {
+      toast.error("该候选人暂无简历");
+    }
+  };
+
+  const getScoreTextColor = (score: number) => {
+    if (score >= 80) return "text-green-600 dark:text-green-400";
+    if (score >= 60) return "text-amber-600 dark:text-amber-400";
+    return "text-red-500 dark:text-red-400";
+  };
+
+  const getScoreBgColor = (score: number) => {
+    if (score >= 80) return "bg-green-50 dark:bg-green-950/30";
+    if (score >= 60) return "bg-amber-50 dark:bg-amber-950/30";
+    return "bg-red-50 dark:bg-red-950/30";
+  };
+
+  const getScoreBorderColor = (score: number) => {
+    if (score >= 80) return "border-green-500";
+    if (score >= 60) return "border-amber-500";
+    return "border-red-500";
+  };
+
   const getMatchedCandidates = (jobId: string) => {
-    return candidates
+    let matched = candidates
       .map(c => ({
         candidate: c,
         match: c.matchedJobs?.find(m => m.jobId === jobId)
       }))
-      .filter(item => item.match !== undefined)
-      .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0))
-      .slice(0, 5);
+      .filter(item => item.match !== undefined);
+
+    // Apply name search filter
+    if (candidateSearchQuery.trim()) {
+      const query = candidateSearchQuery.toLowerCase();
+      matched = matched.filter(item =>
+        item.candidate.name.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply score filter
+    if (candidateScoreFilter !== "all") {
+      const minScore = parseInt(candidateScoreFilter);
+      matched = matched.filter(item => (item.match?.score || 0) >= minScore);
+    }
+
+    // Sort (default: score descending)
+    matched.sort((a, b) => {
+      if (candidateSortBy === "score") {
+        return (b.match?.score || 0) - (a.match?.score || 0);
+      } else {
+        return a.candidate.name.localeCompare(b.candidate.name, "zh-CN");
+      }
+    });
+
+    return matched;
   };
 
   const filtered = jobs.filter((j) => {
@@ -308,82 +386,126 @@ export default function JobsPage() {
                 const matchedCandidates = getMatchedCandidates(selectedJob.id);
 
                 return (
-                  <div className="sticky top-0">
-                    <div className="p-4 border-b border-border bg-background">
-                      <h3 className="font-semibold flex items-center gap-2 mb-1">
-                        <Users className="w-4 h-4 text-primary" />
-                        匹配的候选人
-                      </h3>
-                      {matchedCandidates.length > 0 && (
-                        <Badge variant="secondary" className="ml-auto">{matchedCandidates.length} 位</Badge>
-                      )}
+                  <div className="sticky top-0 h-full flex flex-col">
+                    {/* Header with filters */}
+                    <div className="p-4 border-b border-border bg-background space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold flex items-center gap-2">
+                          <Users className="w-4 h-4 text-primary" />
+                          匹配的候选人
+                        </h3>
+                        <Badge variant="secondary">{matchedCandidates.length} 位</Badge>
+                      </div>
+
+                      {/* Search by name */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          placeholder="搜索候选人姓名..."
+                          value={candidateSearchQuery}
+                          onChange={(e) => setCandidateSearchQuery(e.target.value)}
+                          className="pl-9 h-9 text-sm"
+                        />
+                      </div>
+
+                      {/* Filters row */}
+                      <div className="flex gap-2">
+                        {/* Score filter */}
+                        <Select value={candidateScoreFilter} onValueChange={setCandidateScoreFilter}>
+                          <SelectTrigger className="h-9 text-sm flex-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">全部分数</SelectItem>
+                            <SelectItem value="80">80分以上</SelectItem>
+                            <SelectItem value="60">60分以上</SelectItem>
+                            <SelectItem value="0">60分以下</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {/* Sort by */}
+                        <Select value={candidateSortBy} onValueChange={(v: any) => setCandidateSortBy(v)}>
+                          <SelectTrigger className="h-9 text-sm flex-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="score">按分数</SelectItem>
+                            <SelectItem value="name">按姓名</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
 
-                    <div className="p-4 space-y-3">
-                      {matchedCandidates.length === 0 ? (
-                        <div className="text-center py-8">
-                          <Users className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
-                          <p className="text-sm text-muted-foreground">暂无匹配候选人</p>
-                          <p className="text-xs text-muted-foreground mt-1">请先在候选人页面进行匹配</p>
-                        </div>
-                      ) : (
-                        matchedCandidates.map(({ candidate, match }) => {
-                          const scoreColor = match!.score >= 80 ? "text-green-600 dark:text-green-400" :
-                                           match!.score >= 60 ? "text-amber-600 dark:text-amber-400" : "text-red-500 dark:text-red-400";
-                          const scoreBg = match!.score >= 80 ? "bg-green-100 dark:bg-green-900/30" :
-                                        match!.score >= 60 ? "bg-amber-100 dark:bg-amber-900/30" : "bg-red-100 dark:bg-red-900/30";
-
-                          return (
-                            <Card key={candidate.id} className={`p-4 ${scoreBg} border-l-4 ${match!.score >= 80 ? "border-green-500" : match!.score >= 60 ? "border-amber-500" : "border-red-500"}`}>
-                              <div className="flex justify-between items-start mb-3">
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-semibold text-sm mb-1">{candidate.name}</p>
-                                  <p className="text-xs text-muted-foreground truncate">{candidate.contact?.email || candidate.contact?.phone || ""}</p>
-                                </div>
-                                <div className={`text-2xl font-bold ${scoreColor}`}>
-                                  {match!.score}
-                                </div>
+                    {/* Candidates list */}
+                    <ScrollArea className="flex-1">
+                      <div className="p-4 space-y-2">
+                        {matchedCandidates.length === 0 ? (
+                          <div className="text-center py-8">
+                            <Users className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+                            <p className="text-sm text-muted-foreground">暂无匹配候选人</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {candidateSearchQuery || candidateScoreFilter !== "all"
+                                ? "尝试调整筛选条件"
+                                : "请先在候选人页面进行匹配"}
+                            </p>
+                          </div>
+                        ) : (
+                        matchedCandidates.map(({ candidate, match }) => (
+                          <Card
+                            key={candidate.id}
+                            className={`
+                              p-3 cursor-pointer transition-all duration-200 border-l-4
+                              hover:shadow-md hover:border-opacity-80
+                              ${getScoreBorderColor(match!.score)}
+                              ${getScoreBgColor(match!.score)}
+                            `}
+                            onClick={() => openCandidateSheet(candidate, match!)}
+                          >
+                            <div className="flex items-center gap-3">
+                              {/* Avatar placeholder with initials */}
+                              <div className={`
+                                w-10 h-10 rounded-full flex items-center justify-center
+                                font-semibold text-sm shrink-0
+                                ${match!.score >= 80 ? "bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-100" :
+                                  match!.score >= 60 ? "bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-100" :
+                                  "bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-100"}
+                              `}>
+                                {candidate.name.charAt(0)}
                               </div>
 
-                              {match!.reason && (
-                                <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{match!.reason}</p>
-                              )}
-
-                              {((match!.pros?.length ?? 0) > 0 || (match!.cons?.length ?? 0) > 0) && (
-                                <div className="space-y-2">
-                                  {(match!.pros?.length ?? 0) > 0 && (
-                                    <div>
-                                      <p className="text-xs font-semibold text-green-600 dark:text-green-400 mb-1">优势</p>
-                                      <div className="space-y-1">
-                                        {match!.pros!.slice(0, 3).map((p, i) => (
-                                          <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
-                                            <span className="shrink-0 text-green-600">•</span>
-                                            <span>{p}</span>
-                                          </p>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {(match!.cons?.length ?? 0) > 0 && (
-                                    <div>
-                                      <p className="text-xs font-semibold text-orange-600 dark:text-orange-400 mb-1">风险</p>
-                                      <div className="space-y-1">
-                                        {match!.cons!.slice(0, 3).map((c, i) => (
-                                          <p key={i} className="text-xs text-muted-foreground flex items-start gap-1">
-                                            <span className="shrink-0 text-orange-600">•</span>
-                                            <span>{c}</span>
-                                          </p>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
+                              {/* Candidate info */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-semibold text-sm">{candidate.name}</p>
+                                  <Badge
+                                    variant="outline"
+                                    className={`
+                                      text-[10px] h-5 px-1.5 border-0 shrink-0
+                                      ${getScoreTextColor(match!.score)}
+                                      ${getScoreBgColor(match!.score)}
+                                    `}
+                                  >
+                                    {match!.score}分
+                                  </Badge>
                                 </div>
-                              )}
-                            </Card>
-                          );
-                        })
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {candidate.contact?.email || candidate.contact?.phone || "暂无联系方式"}
+                                </p>
+                                {match!.reason && (
+                                  <p className="text-[11px] text-muted-foreground line-clamp-1 mt-1">
+                                    {match!.reason}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Chevron right indicator */}
+                              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                            </div>
+                          </Card>
+                        ))
                       )}
-                    </div>
+                      </div>
+                    </ScrollArea>
                   </div>
                 );
               })()}
@@ -415,6 +537,53 @@ export default function JobsPage() {
         onConfirm={confirmDelete}
         variant="destructive"
       />
+
+      {/* Candidate Detail Sheet */}
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent side="right" size="md" className="p-0">
+          {selectedCandidate && (
+            <div className="h-full flex flex-col">
+              {/* Fixed header */}
+              <div className="p-6 border-b shrink-0">
+                <SheetHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <SheetTitle className="text-xl">{selectedCandidate.name}</SheetTitle>
+                      <div className="text-sm text-muted-foreground mt-1">
+                        {selectedCandidate.contact?.email && <div>{selectedCandidate.contact.email}</div>}
+                        {selectedCandidate.contact?.phone && <div>{selectedCandidate.contact.phone}</div>}
+                      </div>
+                    </div>
+                    {selectedMatch && (
+                      <div className="text-right">
+                        <div className={`text-3xl font-bold ${getScoreTextColor(selectedMatch.score)}`}>
+                          {selectedMatch.score}分
+                        </div>
+                        <p className="text-xs text-muted-foreground">匹配度</p>
+                      </div>
+                    )}
+                  </div>
+                </SheetHeader>
+              </div>
+
+              {/* Scrollable content */}
+              <ScrollArea className="flex-1">
+                <div className="p-6">
+                  <CandidateDetailContent
+                    candidate={selectedCandidate}
+                    match={selectedMatch ?? undefined}
+                    actions={{
+                      onScheduleInterview: handleScheduleInterview,
+                      onUpdateStatus: handleUpdateCandidateStatus,
+                      onViewResume: handleViewResume,
+                    }}
+                  />
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
