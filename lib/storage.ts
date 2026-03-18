@@ -431,7 +431,7 @@ function rowToJob(row: any): Job {
   }
 
   if (!scoringRule && row.scoring_rule) {
-    const parsed = safeJsonParse(row.scoring_rule, undefined);
+    const parsed = safeJsonParse<ScoringRule | undefined>(row.scoring_rule, undefined);
     if (parsed && parsed.dimensions && Array.isArray(parsed.dimensions) && parsed.dimensions.length > 0) {
       scoringRule = parsed;
     }
