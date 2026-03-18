@@ -568,12 +568,42 @@ export default function CandidatesPage() {
                     <Card key={i} className="p-3 space-y-2">
                       <div className="flex justify-between items-center">
                         <span className="font-medium text-sm">{m.jobTitle || m.jobId}</span>
-                        <Badge variant="outline" className={`border-0 ${
-                          m.score >= 80 ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-                          m.score >= 60 ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
-                          "bg-muted text-muted-foreground"
-                        }`}>{m.score}分</Badge>
+                        <div className="flex items-center gap-2">
+                          {m.scoringSnapshot && (
+                            <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-dashed">
+                              v{m.scoringSnapshot.version}
+                            </Badge>
+                          )}
+                          <Badge variant="outline" className={`border-0 ${
+                            m.score >= 80 ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+                            m.score >= 60 ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
+                            "bg-muted text-muted-foreground"
+                          }`}>{m.score}分</Badge>
+                        </div>
                       </div>
+
+                      {/* Dimension scores mini bars */}
+                      {m.dimensionScores && m.dimensionScores.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          {m.dimensionScores.map(ds => (
+                            <div key={ds.dimensionId} className="flex items-center gap-2">
+                              <span className="text-[10px] text-muted-foreground w-16 truncate shrink-0">{ds.dimensionName}</span>
+                              <div className="flex-1 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${
+                                    ds.score >= 80 ? "bg-green-500" : ds.score >= 60 ? "bg-amber-500" : "bg-red-400"
+                                  }`}
+                                  style={{ width: `${ds.score}%` }}
+                                />
+                              </div>
+                              <span className={`text-[10px] w-8 text-right shrink-0 font-medium ${
+                                ds.score >= 80 ? "text-green-600" : ds.score >= 60 ? "text-amber-600" : "text-red-500"
+                              }`}>{ds.score}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <p className="text-xs text-muted-foreground">{m.reason}</p>
                       {((m.pros?.length ?? 0) > 0 || (m.cons?.length ?? 0) > 0) && (
                         <div className="grid grid-cols-2 gap-2 pt-1">

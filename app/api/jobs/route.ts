@@ -5,6 +5,14 @@ import type { Job } from "@/lib/types";
 export const runtime = "nodejs";
 
 /**
+ * PATCH /api/jobs
+ * Partially update an existing job (alias for PUT for convenience)
+ */
+export async function PATCH(request: NextRequest) {
+  return PUT(request);
+}
+
+/**
  * GET /api/jobs
  * Get all jobs or a specific job by ID
  */
@@ -66,6 +74,7 @@ export async function POST(request: NextRequest) {
       skills: skills || [],
       salary: body.salary,
       status: body.status || "active",
+      scoringRuleId: body.scoringRuleId || undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

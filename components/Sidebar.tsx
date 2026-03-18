@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   MessageSquare, Briefcase, Users, Calendar, FileText,
-  Settings, Plus, ChevronLeft, ChevronRight, Sparkles, LogOut,
+  Settings, Plus, ChevronLeft, ChevronRight, Sparkles, LogOut, Target,
 } from "lucide-react";
 import { useStore } from "@/store/useStore";
 import { NexusLogo } from "@/components/NexusLogo";
@@ -15,6 +15,7 @@ import { NexusLogo } from "@/components/NexusLogo";
 const modules = [
   { id: "chat", name: "对话助手", icon: MessageSquare, href: "/" },
   { id: "jobs", name: "职位管理", icon: Briefcase, href: "/jobs" },
+  { id: "scoring-rules", name: "评分参考", icon: Target, href: "/scoring-rules" },
   { id: "candidates", name: "候选人", icon: Users, href: "/candidates" },
   { id: "interviews", name: "面试管理", icon: Calendar, href: "/interviews" },
   { id: "history", name: "历史记录", icon: FileText, href: "/history" },

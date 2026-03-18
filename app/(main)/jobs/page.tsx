@@ -17,11 +17,14 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Briefcase, Plus, Search, Loader2, Sparkles, Trash2, Edit, ChevronDown, ChevronUp, Users, ChevronRight,
+  Tabs, TabsContent, TabsList, TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  Briefcase, Plus, Search, Loader2, Sparkles, Trash2, Edit, ChevronDown, ChevronUp, Users, ChevronRight, Eye, Filter, Target,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CandidateDetailContent } from "@/components/CandidateDetailContent";
-import type { Job, Candidate, JobMatch } from "@/lib/types";
+import type { Job, Candidate, JobMatch, ScoringRule, ScoringRuleSnapshot } from "@/lib/types";
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
   active: { label: "招聘中", dot: "bg-green-500", bg: "bg-green-500/10", text: "text-green-600 dark:text-green-400" },
@@ -36,12 +39,15 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteRuleOpen, setIsDeleteRuleOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
   const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Sheet state for candidate details
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -51,7 +57,15 @@ export default function JobsPage() {
   // Candidate filter state
   const [candidateSearchQuery, setCandidateSearchQuery] = useState("");
   const [candidateScoreFilter, setCandidateScoreFilter] = useState<string>("all");
-  const [candidateSortBy, setCandidateSortBy] = useState<"score" | "name">("score");
+  const [candidateSortBy, setCandidateSortBy] = useState<string>("score");
+
+  // Dimension filter state
+  const [dimensionFilterId, setDimensionFilterId] = useState<string>("none");
+  const [dimensionMinScore, setDimensionMinScore] = useState<string>("0");
+
+  // Scoring snapshot dialog
+  const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false);
+  const [viewingSnapshot, setViewingSnapshot] = useState<ScoringRuleSnapshot | null>(null);
 
   const loadJobs = async () => {
     try {
@@ -144,6 +158,32 @@ export default function JobsPage() {
     if (res.ok) { toast.success("状态已更新"); loadJobs(); }
   };
 
+  const handleDeleteScoringRule = async () => {
+    if (!selectedJob) return;
+
+    try {
+      const response = await fetch("/api/jobs", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedJob.id,
+          scoringRuleId: null,
+        }),
+      });
+
+      if (response.ok) {
+        toast.success("已解除评分参考关联");
+        await loadJobs();
+        const refreshed = jobs.find(j => j.id === selectedJob.id);
+        if (refreshed) setSelectedJob(refreshed);
+        setIsDeleteRuleOpen(false);
+      }
+    } catch (error) {
+      console.error("解除评分参考关联失败:", error);
+      toast.error("解除关联失败");
+    }
+  };
+
   const openCandidateSheet = (candidate: Candidate, match: JobMatch) => {
     setSelectedCandidate(candidate);
     setSelectedMatch(match);
@@ -195,7 +235,6 @@ export default function JobsPage() {
       }))
       .filter(item => item.match !== undefined);
 
-    // Apply name search filter
     if (candidateSearchQuery.trim()) {
       const query = candidateSearchQuery.toLowerCase();
       matched = matched.filter(item =>
@@ -203,19 +242,33 @@ export default function JobsPage() {
       );
     }
 
-    // Apply score filter
     if (candidateScoreFilter !== "all") {
       const minScore = parseInt(candidateScoreFilter);
       matched = matched.filter(item => (item.match?.score || 0) >= minScore);
     }
 
-    // Sort (default: score descending)
+    // Dimension filter
+    if (dimensionFilterId !== "none" && dimensionMinScore !== "0") {
+      const minDimScore = parseInt(dimensionMinScore);
+      matched = matched.filter(item => {
+        const ds = item.match?.dimensionScores?.find(d => d.dimensionId === dimensionFilterId);
+        return ds ? ds.score >= minDimScore : false;
+      });
+    }
+
+    // Sort
     matched.sort((a, b) => {
       if (candidateSortBy === "score") {
         return (b.match?.score || 0) - (a.match?.score || 0);
-      } else {
+      } else if (candidateSortBy === "name") {
         return a.candidate.name.localeCompare(b.candidate.name, "zh-CN");
+      } else if (candidateSortBy.startsWith("dim:")) {
+        const dimId = candidateSortBy.slice(4);
+        const aScore = a.match?.dimensionScores?.find(d => d.dimensionId === dimId)?.score || 0;
+        const bScore = b.match?.dimensionScores?.find(d => d.dimensionId === dimId)?.score || 0;
+        return bScore - aScore;
       }
+      return 0;
     });
 
     return matched;
@@ -243,6 +296,46 @@ export default function JobsPage() {
               <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader><DialogTitle>智能发布职位</DialogTitle></DialogHeader>
                 <SmartJobCreator onCreated={() => { setIsCreateOpen(false); loadJobs(); }} />
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+              <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto p-0">
+                <DialogHeader className="px-6 pt-6 pb-0">
+                  <DialogTitle className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Edit className="w-4 h-4 text-primary" />
+                    </div>
+                    编辑职位
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="px-6 pb-6">
+                  {selectedJob && (
+                    <JobEditor
+                      job={selectedJob}
+                      onSave={async (updatedJob) => {
+                        setSaving(true);
+                        try {
+                          const res = await fetch(`/api/jobs?id=${selectedJob.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(updatedJob),
+                          });
+                          if (!res.ok) throw new Error("保存失败");
+                          toast.success("职位已更新");
+                          await loadJobs();
+                          setIsEditOpen(false);
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : "保存失败");
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                      onCancel={() => setIsEditOpen(false)}
+                      saving={saving}
+                    />
+                  )}
+                </div>
               </DialogContent>
             </Dialog>
           </div>
@@ -342,6 +435,14 @@ export default function JobsPage() {
                     <p className="text-muted-foreground">{selectedJob.department} · {selectedJob.level}</p>
                   </div>
                   <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="编辑职位"
+                      onClick={() => setIsEditOpen(true)}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
                     <Select value={selectedJob.status} onValueChange={(v) => handleStatusChange(selectedJob.id, v)}>
                       <SelectTrigger className={`w-32 h-8 rounded-full border-0 ${STATUS_CONFIG[selectedJob.status]?.bg || "bg-muted"} ${STATUS_CONFIG[selectedJob.status]?.text || "text-muted-foreground"}`}>
                         <div className="flex items-center gap-1.5">
@@ -377,6 +478,45 @@ export default function JobsPage() {
                 {selectedJob.description?.benefits?.length > 0 && (
                   <div><h3 className="font-semibold mb-2">福利待遇</h3><ul className="text-sm text-muted-foreground space-y-1">{selectedJob.description.benefits.map((b, i) => <li key={i}>• {b}</li>)}</ul></div>
                 )}
+                {selectedJob.scoringRule && selectedJob.scoringRule.dimensions?.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <Target className="w-4 h-4 text-primary" />
+                        评分参考
+                        <Badge variant="outline" className="text-[10px]">v{selectedJob.scoringRule.version}</Badge>
+                      </h3>
+                      <div className="flex items-center gap-1">
+                        {selectedJob.scoringRuleId && (
+                          <a href="/scoring-rules" className="text-xs text-primary hover:underline mr-2">管理 →</a>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsDeleteRuleOpen(true)}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <Card className="p-3 bg-primary/5 border-primary/20">
+                      <p className="text-sm font-medium mb-2">{selectedJob.scoringRule.name}</p>
+                      <div className="space-y-1.5">
+                        {selectedJob.scoringRule.dimensions.map((dim, i) => (
+                          <div key={dim.id} className="flex justify-between items-center text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-md bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px]">{i + 1}</span>
+                              <span className="font-medium">{dim.name}</span>
+                              {dim.description && <span className="text-muted-foreground">· {dim.description}</span>}
+                            </div>
+                            <Badge variant="secondary" className="text-[10px]">{dim.weight}%</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -384,10 +524,10 @@ export default function JobsPage() {
             <div className="w-96 overflow-y-auto border-l border-border bg-muted/30">
               {(() => {
                 const matchedCandidates = getMatchedCandidates(selectedJob.id);
+                const jobDimensions = selectedJob.scoringRule?.dimensions || [];
 
                 return (
                   <div className="sticky top-0 h-full flex flex-col">
-                    {/* Header with filters */}
                     <div className="p-4 border-b border-border bg-background space-y-3">
                       <div className="flex items-center justify-between">
                         <h3 className="font-semibold flex items-center gap-2">
@@ -397,7 +537,6 @@ export default function JobsPage() {
                         <Badge variant="secondary">{matchedCandidates.length} 位</Badge>
                       </div>
 
-                      {/* Search by name */}
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                         <Input
@@ -408,13 +547,9 @@ export default function JobsPage() {
                         />
                       </div>
 
-                      {/* Filters row */}
                       <div className="flex gap-2">
-                        {/* Score filter */}
                         <Select value={candidateScoreFilter} onValueChange={setCandidateScoreFilter}>
-                          <SelectTrigger className="h-9 text-sm flex-1">
-                            <SelectValue />
-                          </SelectTrigger>
+                          <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">全部分数</SelectItem>
                             <SelectItem value="80">80分以上</SelectItem>
@@ -423,20 +558,47 @@ export default function JobsPage() {
                           </SelectContent>
                         </Select>
 
-                        {/* Sort by */}
-                        <Select value={candidateSortBy} onValueChange={(v: any) => setCandidateSortBy(v)}>
-                          <SelectTrigger className="h-9 text-sm flex-1">
-                            <SelectValue />
-                          </SelectTrigger>
+                        <Select value={candidateSortBy} onValueChange={setCandidateSortBy}>
+                          <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="score">按分数</SelectItem>
+                            <SelectItem value="score">按总分</SelectItem>
                             <SelectItem value="name">按姓名</SelectItem>
+                            {jobDimensions.map(dim => (
+                              <SelectItem key={dim.id} value={`dim:${dim.id}`}>按{dim.name}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {/* Dimension filter */}
+                      {jobDimensions.length > 0 && (
+                        <div className="flex gap-2 items-center">
+                          <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <Select value={dimensionFilterId} onValueChange={setDimensionFilterId}>
+                            <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="按维度筛选" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">不限维度</SelectItem>
+                              {jobDimensions.map(dim => (
+                                <SelectItem key={dim.id} value={dim.id}>{dim.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {dimensionFilterId !== "none" && (
+                            <Select value={dimensionMinScore} onValueChange={setDimensionMinScore}>
+                              <SelectTrigger className="h-8 text-xs w-24"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="0">不限</SelectItem>
+                                <SelectItem value="60">≥60分</SelectItem>
+                                <SelectItem value="70">≥70分</SelectItem>
+                                <SelectItem value="80">≥80分</SelectItem>
+                                <SelectItem value="90">≥90分</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Candidates list */}
                     <ScrollArea className="flex-1">
                       <div className="p-4 space-y-2">
                         {matchedCandidates.length === 0 ? (
@@ -444,7 +606,7 @@ export default function JobsPage() {
                             <Users className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
                             <p className="text-sm text-muted-foreground">暂无匹配候选人</p>
                             <p className="text-xs text-muted-foreground mt-1">
-                              {candidateSearchQuery || candidateScoreFilter !== "all"
+                              {candidateSearchQuery || candidateScoreFilter !== "all" || dimensionFilterId !== "none"
                                 ? "尝试调整筛选条件"
                                 : "请先在候选人页面进行匹配"}
                             </p>
@@ -462,7 +624,6 @@ export default function JobsPage() {
                             onClick={() => openCandidateSheet(candidate, match!)}
                           >
                             <div className="flex items-center gap-3">
-                              {/* Avatar placeholder with initials */}
                               <div className={`
                                 w-10 h-10 rounded-full flex items-center justify-center
                                 font-semibold text-sm shrink-0
@@ -473,32 +634,42 @@ export default function JobsPage() {
                                 {candidate.name.charAt(0)}
                               </div>
 
-                              {/* Candidate info */}
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
                                   <p className="font-semibold text-sm">{candidate.name}</p>
                                   <Badge
                                     variant="outline"
-                                    className={`
-                                      text-[10px] h-5 px-1.5 border-0 shrink-0
-                                      ${getScoreTextColor(match!.score)}
-                                      ${getScoreBgColor(match!.score)}
-                                    `}
+                                    className={`text-[10px] h-5 px-1.5 border-0 shrink-0 ${getScoreTextColor(match!.score)} ${getScoreBgColor(match!.score)}`}
                                   >
                                     {match!.score}分
                                   </Badge>
                                 </div>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {candidate.contact?.email || candidate.contact?.phone || "暂无联系方式"}
-                                </p>
-                                {match!.reason && (
-                                  <p className="text-[11px] text-muted-foreground line-clamp-1 mt-1">
-                                    {match!.reason}
-                                  </p>
+
+                                {/* Dimension score mini bars */}
+                                {match!.dimensionScores && match!.dimensionScores.length > 0 && (
+                                  <div className="space-y-1 mt-1.5">
+                                    {match!.dimensionScores.slice(0, 3).map(ds => (
+                                      <div key={ds.dimensionId} className="flex items-center gap-1.5">
+                                        <span className="text-[9px] text-muted-foreground w-12 truncate shrink-0">{ds.dimensionName}</span>
+                                        <div className="flex-1 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all ${
+                                              ds.score >= 80 ? "bg-green-500" : ds.score >= 60 ? "bg-amber-500" : "bg-red-400"
+                                            }`}
+                                            style={{ width: `${ds.score}%` }}
+                                          />
+                                        </div>
+                                        <span className="text-[9px] text-muted-foreground w-6 text-right shrink-0">{ds.score}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {!match!.dimensionScores && match!.reason && (
+                                  <p className="text-[11px] text-muted-foreground line-clamp-1 mt-1">{match!.reason}</p>
                                 )}
                               </div>
 
-                              {/* Chevron right indicator */}
                               <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                             </div>
                           </Card>
@@ -538,12 +709,21 @@ export default function JobsPage() {
         variant="destructive"
       />
 
+      <ConfirmDialog
+        open={isDeleteRuleOpen}
+        onOpenChange={setIsDeleteRuleOpen}
+        title="解除评分参考关联"
+        description="确定要解除此岗位与评分参考的关联吗？解除后，候选人匹配将使用默认 AI 评分逻辑。评分参考本身不会被删除。"
+        confirmLabel="解除关联"
+        onConfirm={handleDeleteScoringRule}
+        variant="destructive"
+      />
+
       {/* Candidate Detail Sheet */}
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent side="right" size="md" className="p-0">
           {selectedCandidate && (
             <div className="h-full flex flex-col">
-              {/* Fixed header */}
               <div className="p-6 border-b shrink-0">
                 <SheetHeader>
                   <div className="flex items-start justify-between">
@@ -566,9 +746,71 @@ export default function JobsPage() {
                 </SheetHeader>
               </div>
 
-              {/* Scrollable content */}
               <ScrollArea className="flex-1">
-                <div className="p-6">
+                <div className="p-6 space-y-6">
+                  {/* Dimension Scores Section */}
+                  {selectedMatch?.dimensionScores && selectedMatch.dimensionScores.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold flex items-center gap-1.5">
+                          <div className="w-1 h-4 rounded-full bg-primary" />
+                          评分明细
+                        </h4>
+                        {selectedMatch.scoringSnapshot && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              setViewingSnapshot(selectedMatch.scoringSnapshot!);
+                              setSnapshotDialogOpen(true);
+                            }}
+                          >
+                            <Eye className="w-3 h-3 mr-1" />
+                            规则 v{selectedMatch.scoringSnapshot.version}
+                            {selectedJob?.scoringRule?.version !== selectedMatch.scoringSnapshot.version && (
+                              <Badge variant="outline" className="ml-1.5 text-[9px] h-4 px-1 border-amber-500/50 text-amber-600">旧版</Badge>
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                      <div className="space-y-2.5">
+                        {selectedMatch.dimensionScores.map(ds => (
+                          <div key={ds.dimensionId} className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-medium">{ds.dimensionName}</span>
+                              <span className={`font-semibold ${
+                                ds.score >= 80 ? "text-green-600" : ds.score >= 60 ? "text-amber-600" : "text-red-500"
+                              }`}>
+                                {ds.score}<span className="text-muted-foreground font-normal">/{ds.maxScore}</span>
+                                <span className="text-muted-foreground font-normal ml-1">({ds.weight}%)</span>
+                              </span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  ds.score >= 80 ? "bg-green-500" : ds.score >= 60 ? "bg-amber-500" : "bg-red-400"
+                                }`}
+                                style={{ width: `${ds.score}%` }}
+                              />
+                            </div>
+                            {ds.details && (
+                              <div className="text-[10px] text-muted-foreground pl-0.5">
+                                {ds.details.matched && ds.details.matched.length > 0 && (
+                                  <span className="text-green-600">匹配: {ds.details.matched.join(", ")}</span>
+                                )}
+                                {ds.details.missing && ds.details.missing.length > 0 && (
+                                  <span className="text-red-500 ml-2">缺失: {ds.details.missing.join(", ")}</span>
+                                )}
+                                {ds.details.notes && <span>{ds.details.notes}</span>}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <CandidateDetailContent
                     candidate={selectedCandidate}
                     match={selectedMatch ?? undefined}
@@ -584,6 +826,56 @@ export default function JobsPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Scoring Rule Snapshot Dialog */}
+      <Dialog open={snapshotDialogOpen} onOpenChange={setSnapshotDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-primary" />
+              评分参考快照
+              {viewingSnapshot && (
+                <Badge variant="secondary" className="text-[10px]">v{viewingSnapshot.version}</Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {viewingSnapshot && (
+            <div className="space-y-4">
+              <div className="text-sm">
+                <span className="text-muted-foreground">规则名称：</span>
+                <span className="font-medium">{viewingSnapshot.ruleName}</span>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                快照时间：{new Date(viewingSnapshot.snapshotAt).toLocaleString("zh-CN")}
+              </div>
+              <div className="space-y-2">
+                {viewingSnapshot.dimensions.map(dim => (
+                  <div key={dim.id} className="rounded-lg border border-border/50 p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{dim.name}</span>
+                        <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                          {dim.type}
+                        </Badge>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px]">{dim.weight}%</Badge>
+                    </div>
+                    {dim.description && (
+                      <p className="text-xs text-muted-foreground">{dim.description}</p>
+                    )}
+                    <div className="text-[10px] text-muted-foreground">
+                      评估方法: {dim.evaluator.method}
+                      {dim.evaluator.keywords?.length ? ` · 关键词: ${dim.evaluator.keywords.join(", ")}` : ""}
+                      {dim.evaluator.minYears ? ` · 最低${dim.evaluator.minYears}年` : ""}
+                      {dim.evaluator.aiPrompt ? ` · ${dim.evaluator.aiPrompt.slice(0, 50)}...` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -593,7 +885,24 @@ function SmartJobCreator({ onCreated }: { onCreated: () => void }) {
   const [generating, setGenerating] = useState(false);
   const [preview, setPreview] = useState<Job | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showRuleSelector, setShowRuleSelector] = useState(false);
   const [editData, setEditData] = useState<any>(null);
+  const [selectedRuleId, setSelectedRuleId] = useState<string>("none");
+  const [allRules, setAllRules] = useState<ScoringRule[]>([]);
+  const [loadingRules, setLoadingRules] = useState(false);
+
+  useEffect(() => {
+    const fetchRules = async () => {
+      setLoadingRules(true);
+      try {
+        const res = await fetch("/api/scoring-rules");
+        const data = await res.json();
+        setAllRules(data.rules || []);
+      } catch { /* ignore */ }
+      finally { setLoadingRules(false); }
+    };
+    fetchRules();
+  }, []);
 
   const handleGenerate = async () => {
     if (!freeText.trim()) { toast.error("请输入职位描述"); return; }
@@ -637,6 +946,7 @@ function SmartJobCreator({ onCreated }: { onCreated: () => void }) {
           description: jobData.description,
           salary: jobData.salary,
           status: "active",
+          scoringRuleId: selectedRuleId !== "none" ? selectedRuleId : undefined,
         }),
       });
       if (!res.ok) throw new Error("保存失败");
@@ -646,6 +956,8 @@ function SmartJobCreator({ onCreated }: { onCreated: () => void }) {
       toast.error(err instanceof Error ? err.message : "保存失败");
     }
   };
+
+  const selectedRule = allRules.find(r => r.id === selectedRuleId);
 
   return (
     <div className="space-y-4">
@@ -691,6 +1003,52 @@ function SmartJobCreator({ onCreated }: { onCreated: () => void }) {
             {showAdvanced ? "收起编辑" : "展开编辑"}
           </Button>
 
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowRuleSelector(!showRuleSelector)}
+            className="w-full"
+          >
+            <Target className="w-4 h-4 mr-1" />
+            {showRuleSelector ? "收起评分参考" : "关联评分参考"}
+            {selectedRuleId !== "none" && <Badge variant="secondary" className="ml-2">已关联</Badge>}
+          </Button>
+
+          {showRuleSelector && (
+            <div className="border-t pt-3 space-y-3">
+              <Select value={selectedRuleId} onValueChange={setSelectedRuleId}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="请选择评分参考" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">不关联评分参考</SelectItem>
+                  {loadingRules ? (
+                    <SelectItem value="_loading" disabled>加载中...</SelectItem>
+                  ) : (
+                    allRules.map(rule => (
+                      <SelectItem key={rule.id} value={rule.id}>
+                        {rule.name} (v{rule.version} · {rule.dimensions?.length || 0}维度)
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {selectedRule && selectedRule.dimensions?.length > 0 && (
+                <div className="text-xs space-y-1 pl-1">
+                  {selectedRule.dimensions.map((dim, i) => (
+                    <div key={dim.id} className="flex items-center gap-2 text-muted-foreground">
+                      <span className="font-medium text-foreground">{i + 1}. {dim.name}</span>
+                      <span>{dim.weight}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <a href="/scoring-rules" target="_blank" className="text-xs text-primary hover:underline">
+                前往规则管理页 →
+              </a>
+            </div>
+          )}
+
           {showAdvanced && editData && (
             <div className="space-y-3 border-t pt-3">
               <div className="grid grid-cols-2 gap-3">
@@ -716,6 +1074,231 @@ function SmartJobCreator({ onCreated }: { onCreated: () => void }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function JobEditor({
+  job,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  job: Job;
+  onSave: (job: Partial<Job>) => Promise<void>;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const [editData, setEditData] = useState<Job>(() => ({
+    ...job,
+    description: job.description ? { ...job.description } : {
+      overview: "",
+      responsibilities: [],
+      requirements: [],
+      benefits: [],
+    },
+    skills: job.skills ? [...job.skills] : [],
+    createdAt: new Date(job.createdAt),
+    updatedAt: new Date(job.updatedAt),
+  }));
+  const [activeTab, setActiveTab] = useState<"info" | "rules">("info");
+  const [allRules, setAllRules] = useState<ScoringRule[]>([]);
+  const [selectedRuleId, setSelectedRuleId] = useState<string>(job.scoringRuleId || "none");
+  const [previewRule, setPreviewRule] = useState<ScoringRule | null>(job.scoringRule || null);
+  const [loadingRules, setLoadingRules] = useState(false);
+
+  useEffect(() => {
+    const fetchRules = async () => {
+      setLoadingRules(true);
+      try {
+        const res = await fetch("/api/scoring-rules");
+        const data = await res.json();
+        setAllRules(data.rules || []);
+      } catch { /* ignore */ }
+      finally { setLoadingRules(false); }
+    };
+    fetchRules();
+  }, []);
+
+  const handleRuleSelect = (ruleId: string) => {
+    setSelectedRuleId(ruleId);
+    if (ruleId === "none") {
+      setPreviewRule(null);
+      setEditData({ ...editData, scoringRuleId: undefined });
+    } else {
+      const rule = allRules.find(r => r.id === ruleId);
+      setPreviewRule(rule || null);
+      setEditData({ ...editData, scoringRuleId: ruleId });
+    }
+  };
+
+  const handleSave = async () => {
+    await onSave(editData);
+  };
+
+  const methodLabels: Record<string, string> = {
+    keyword: "关键词", duration: "年限", ai: "AI", boolean: "布尔", range: "范围",
+  };
+  const typeLabels: Record<string, string> = {
+    skills: "技能", experience: "经验", education: "教育", projects: "项目", custom: "自定义",
+  };
+
+  return (
+    <div className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "info" | "rules")}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="info">职位信息</TabsTrigger>
+          <TabsTrigger value="rules">
+            评分参考
+            {selectedRuleId !== "none" && (
+              <Badge variant="secondary" className="ml-2">已关联</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="info" className="space-y-4 mt-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>职位名称</Label>
+              <Input value={editData.title} onChange={(e) => setEditData({ ...editData, title: e.target.value })} />
+            </div>
+            <div>
+              <Label>部门</Label>
+              <Input value={editData.department} onChange={(e) => setEditData({ ...editData, department: e.target.value })} />
+            </div>
+            <div>
+              <Label>级别</Label>
+              <Select value={editData.level} onValueChange={(v) => setEditData({ ...editData, level: v as any })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="junior">初级</SelectItem>
+                  <SelectItem value="mid">中级</SelectItem>
+                  <SelectItem value="senior">高级</SelectItem>
+                  <SelectItem value="expert">专家</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>状态</Label>
+              <Select value={editData.status} onValueChange={(v) => setEditData({ ...editData, status: v as any })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">招聘中</SelectItem>
+                  <SelectItem value="draft">草稿</SelectItem>
+                  <SelectItem value="paused">暂停</SelectItem>
+                  <SelectItem value="closed">已关闭</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label>技能 (逗号分隔)</Label>
+            <Input
+              value={editData.skills?.join(", ") || ""}
+              onChange={(e) => setEditData({ ...editData, skills: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+            />
+          </div>
+
+          <div>
+            <Label>职位概述</Label>
+            <Textarea value={editData.description?.overview || ""} onChange={(e) => setEditData({ ...editData, description: { ...editData.description, overview: e.target.value } })} rows={3} />
+          </div>
+
+          <div>
+            <Label>岗位职责 (每行一项)</Label>
+            <Textarea value={editData.description?.responsibilities?.join("\n") || ""} onChange={(e) => setEditData({ ...editData, description: { ...editData.description, responsibilities: e.target.value.split("\n").filter(Boolean) } })} rows={4} />
+          </div>
+
+          <div>
+            <Label>任职要求 (每行一项)</Label>
+            <Textarea value={editData.description?.requirements?.join("\n") || ""} onChange={(e) => setEditData({ ...editData, description: { ...editData.description, requirements: e.target.value.split("\n").filter(Boolean) } })} rows={4} />
+          </div>
+
+          <div>
+            <Label>福利待遇 (每行一项)</Label>
+            <Textarea value={editData.description?.benefits?.join("\n") || ""} onChange={(e) => setEditData({ ...editData, description: { ...editData.description, benefits: e.target.value.split("\n").filter(Boolean) } })} rows={3} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="rules" className="mt-4 space-y-4">
+          <div className="space-y-2">
+            <Label className="text-sm">选择评分参考</Label>
+            <Select value={selectedRuleId} onValueChange={handleRuleSelect}>
+              <SelectTrigger className="h-10">
+                <SelectValue placeholder="请选择评分参考" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">不关联评分参考</SelectItem>
+                {loadingRules ? (
+                  <SelectItem value="_loading" disabled>加载中...</SelectItem>
+                ) : (
+                  allRules.map(rule => (
+                    <SelectItem key={rule.id} value={rule.id}>
+                      <div className="flex items-center gap-2">
+                        <span>{rule.name}</span>
+                        <span className="text-muted-foreground text-[10px]">
+                          v{rule.version} · {rule.dimensions?.length || 0}维度
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-2">
+              <a href="/scoring-rules" target="_blank" className="text-xs text-primary hover:underline">
+                前往规则管理页 →
+              </a>
+            </div>
+          </div>
+
+          {/* Preview of selected rule */}
+          {previewRule && previewRule.dimensions?.length > 0 && (
+            <Card className="p-4 space-y-3 border-primary/20 bg-primary/5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold">{previewRule.name}</p>
+                  {previewRule.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5">{previewRule.description}</p>
+                  )}
+                </div>
+                <Badge variant="outline" className="text-[10px]">v{previewRule.version}</Badge>
+              </div>
+              <div className="space-y-1.5">
+                {previewRule.dimensions.map((dim, i) => (
+                  <div key={dim.id} className="flex items-center gap-2 text-xs">
+                    <span className="w-5 h-5 rounded-md bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px]">{i + 1}</span>
+                    <span className="font-medium flex-1">{dim.name}</span>
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1">{typeLabels[dim.type] || dim.type}</Badge>
+                    <Badge variant="outline" className="text-[9px] h-4 px-1">{methodLabels[dim.evaluator?.method] || "AI"}</Badge>
+                    <span className="text-muted-foreground w-10 text-right">{dim.weight}%</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {selectedRuleId === "none" && (
+            <div className="text-center py-8 rounded-xl border border-dashed border-border/50 bg-muted/20">
+              <Target className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">未关联评分参考</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">候选人匹配将使用默认 AI 评分</p>
+              <a href="/scoring-rules" target="_blank" className="text-xs text-primary hover:underline mt-2 inline-block">
+                前往评分参考页创建 →
+              </a>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <div className="flex justify-end gap-2 pt-4 border-t">
+        <Button variant="outline" onClick={onCancel} disabled={saving}>取消</Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+          保存更改
+        </Button>
+      </div>
     </div>
   );
 }

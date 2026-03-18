@@ -8,6 +8,7 @@ import type {
   Conversation,
   CommunicationTemplate,
   BackgroundTask,
+  ScoringRule,
 } from "@/lib/types";
 
 // ==================== Database Configuration ====================
@@ -49,6 +50,8 @@ function initializeTables(db: Database.Database): void {
       hired_count INTEGER DEFAULT 0,
       priority TEXT,
       tags TEXT DEFAULT '[]',
+      scoring_rule TEXT DEFAULT '{}',
+      scoring_rule_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -129,7 +132,90 @@ function initializeTables(db: Database.Database): void {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS scoring_rules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      version TEXT NOT NULL DEFAULT '1.0.0',
+      dimensions TEXT DEFAULT '[]',
+      total_score INTEGER DEFAULT 100,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
+
+  // Migrate: add columns that may be missing from older schema versions
+  const migrations: { table: string; column: string; definition: string }[] = [
+    { table: "jobs", column: "scoring_rule", definition: "TEXT DEFAULT '{}'" },
+    { table: "jobs", column: "scoring_rule_id", definition: "TEXT" },
+  ];
+
+  for (const m of migrations) {
+    try {
+      const cols = db.pragma(`table_info(${m.table})`) as { name: string }[];
+      if (!cols.some(c => c.name === m.column)) {
+        db.exec(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.definition}`);
+      }
+    } catch {
+      // Column may already exist; ignore
+    }
+  }
+
+  // Migrate embedded scoring rules from jobs to scoring_rules table
+  migrateScoringRules(db);
+}
+
+// ==================== Scoring Rule Migration (embedded → standalone) ====================
+
+function migrateScoringRules(db: Database.Database): void {
+  try {
+    const rows = db.prepare(
+      "SELECT id, scoring_rule, scoring_rule_id FROM jobs WHERE scoring_rule IS NOT NULL AND scoring_rule != '{}' AND scoring_rule != '' AND (scoring_rule_id IS NULL OR scoring_rule_id = '')"
+    ).all() as any[];
+
+    if (rows.length === 0) return;
+
+    console.log(`[Migration] Migrating ${rows.length} embedded scoring rules to scoring_rules table...`);
+
+    const insertRule = db.prepare(`
+      INSERT OR IGNORE INTO scoring_rules (id, name, description, version, dimensions, total_score, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const updateJob = db.prepare("UPDATE jobs SET scoring_rule_id = ? WHERE id = ?");
+
+    const migrate = db.transaction(() => {
+      for (const row of rows) {
+        try {
+          const rule = JSON.parse(row.scoring_rule);
+          if (!rule || !rule.dimensions || !Array.isArray(rule.dimensions) || rule.dimensions.length === 0) continue;
+
+          const ruleId = rule.id || `rule-migrated-${row.id}`;
+          const now = new Date().toISOString();
+
+          insertRule.run(
+            ruleId,
+            rule.name || `${row.id} 评估规则`,
+            rule.description || "",
+            rule.version || "1.0.0",
+            JSON.stringify(rule.dimensions),
+            rule.totalScore || 100,
+            rule.createdAt || now,
+            rule.updatedAt || now,
+          );
+
+          updateJob.run(ruleId, row.id);
+        } catch (e) {
+          console.error(`[Migration] Failed to migrate rule for job ${row.id}:`, e);
+        }
+      }
+    });
+
+    migrate();
+    console.log("[Migration] Scoring rules migration complete.");
+  } catch {
+    // Table may not have scoring_rule column yet in fresh DB
+  }
 }
 
 // ==================== JSON File Migration ====================
@@ -229,8 +315,8 @@ function migrateFromFiles(db: Database.Database): void {
 
 function insertJobRow(db: Database.Database, raw: any): void {
   db.prepare(`
-    INSERT OR IGNORE INTO jobs (id, title, level, department, description, skills, salary, status, headcount, hired_count, priority, tags, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO jobs (id, title, level, department, description, skills, salary, status, headcount, hired_count, priority, tags, scoring_rule, scoring_rule_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     raw.id,
     raw.title,
@@ -244,6 +330,8 @@ function insertJobRow(db: Database.Database, raw: any): void {
     raw.hired_count || 0,
     raw.priority || null,
     JSON.stringify(raw.tags || []),
+    raw.scoringRule ? JSON.stringify(raw.scoringRule) : '{}',
+    raw.scoringRuleId ?? null,
     raw.createdAt || new Date().toISOString(),
     raw.updatedAt || new Date().toISOString()
   );
@@ -330,6 +418,25 @@ function insertTemplateRow(db: Database.Database, raw: any): void {
 // ==================== Row → Object Mappers ====================
 
 function rowToJob(row: any): Job {
+  let scoringRule: ScoringRule | undefined;
+
+  if (row.scoring_rule_id) {
+    try {
+      const db = getDb();
+      const ruleRow = db.prepare("SELECT * FROM scoring_rules WHERE id = ?").get(row.scoring_rule_id) as any;
+      if (ruleRow) {
+        scoringRule = rowToScoringRule(ruleRow);
+      }
+    } catch { /* ignore – rule may have been deleted */ }
+  }
+
+  if (!scoringRule && row.scoring_rule) {
+    const parsed = safeJsonParse(row.scoring_rule, undefined);
+    if (parsed && parsed.dimensions && Array.isArray(parsed.dimensions) && parsed.dimensions.length > 0) {
+      scoringRule = parsed;
+    }
+  }
+
   return {
     id: row.id,
     title: row.title,
@@ -343,6 +450,8 @@ function rowToJob(row: any): Job {
     hired_count: row.hired_count ?? undefined,
     priority: row.priority ?? undefined,
     tags: safeJsonParse(row.tags, []),
+    scoringRule,
+    scoringRuleId: row.scoring_rule_id ?? undefined,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -435,13 +544,14 @@ export function saveJob(job: Job): boolean {
     const db = getDb();
     const now = new Date().toISOString();
     db.prepare(`
-      INSERT INTO jobs (id, title, level, department, description, skills, salary, status, headcount, hired_count, priority, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO jobs (id, title, level, department, description, skills, salary, status, headcount, hired_count, priority, tags, scoring_rule, scoring_rule_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title=excluded.title, level=excluded.level, department=excluded.department,
         description=excluded.description, skills=excluded.skills, salary=excluded.salary,
         status=excluded.status, headcount=excluded.headcount, hired_count=excluded.hired_count,
-        priority=excluded.priority, tags=excluded.tags, updated_at=excluded.updated_at
+        priority=excluded.priority, tags=excluded.tags, scoring_rule=excluded.scoring_rule,
+        scoring_rule_id=excluded.scoring_rule_id, updated_at=excluded.updated_at
     `).run(
       job.id,
       job.title,
@@ -455,6 +565,8 @@ export function saveJob(job: Job): boolean {
       job.hired_count ?? 0,
       job.priority ?? null,
       JSON.stringify(job.tags || []),
+      '{}',
+      job.scoringRuleId ?? null,
       new Date(job.createdAt).toISOString(),
       now
     );
@@ -788,12 +900,106 @@ export function deleteTemplate(templateId: string): boolean {
   }
 }
 
+// ==================== Scoring Rule Storage ====================
+
+function rowToScoringRule(row: any): ScoringRule {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    version: row.version || "1.0.0",
+    dimensions: safeJsonParse(row.dimensions, []),
+    totalScore: row.total_score || 100,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function saveScoringRule(rule: ScoringRule): boolean {
+  try {
+    const db = getDb();
+    const now = new Date().toISOString();
+    const createdAt = rule.createdAt
+      ? (rule.createdAt instanceof Date ? rule.createdAt.toISOString() : String(rule.createdAt))
+      : now;
+    db.prepare(`
+      INSERT INTO scoring_rules (id, name, description, version, dimensions, total_score, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name=excluded.name, description=excluded.description,
+        version=excluded.version, dimensions=excluded.dimensions,
+        total_score=excluded.total_score, updated_at=excluded.updated_at
+    `).run(
+      rule.id,
+      rule.name,
+      rule.description || "",
+      rule.version || "1.0.0",
+      JSON.stringify(rule.dimensions || []),
+      rule.totalScore || 100,
+      createdAt,
+      now
+    );
+    return true;
+  } catch (error) {
+    console.error("Error saving scoring rule:", error);
+    return false;
+  }
+}
+
+export function loadScoringRule(ruleId: string): ScoringRule | null {
+  try {
+    const db = getDb();
+    const row = db.prepare("SELECT * FROM scoring_rules WHERE id = ?").get(ruleId);
+    return row ? rowToScoringRule(row) : null;
+  } catch (error) {
+    console.error("Error loading scoring rule:", error);
+    return null;
+  }
+}
+
+export function loadAllScoringRules(): ScoringRule[] {
+  try {
+    const db = getDb();
+    const rows = db.prepare("SELECT * FROM scoring_rules ORDER BY updated_at DESC").all();
+    return rows.map(rowToScoringRule);
+  } catch (error) {
+    console.error("Error loading scoring rules:", error);
+    return [];
+  }
+}
+
+export function deleteScoringRule(ruleId: string): { success: boolean; error?: string } {
+  try {
+    const db = getDb();
+    const linkedJobs = db.prepare("SELECT COUNT(*) as cnt FROM jobs WHERE scoring_rule_id = ?").get(ruleId) as any;
+    if (linkedJobs && linkedJobs.cnt > 0) {
+      return { success: false, error: `该规则正被 ${linkedJobs.cnt} 个岗位使用，请先解除关联` };
+    }
+    const result = db.prepare("DELETE FROM scoring_rules WHERE id = ?").run(ruleId);
+    return { success: result.changes > 0 };
+  } catch (error) {
+    console.error("Error deleting scoring rule:", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export function getLinkedJobsForRule(ruleId: string): Job[] {
+  try {
+    const db = getDb();
+    const rows = db.prepare("SELECT * FROM jobs WHERE scoring_rule_id = ?").all(ruleId);
+    return rows.map(rowToJob);
+  } catch (error) {
+    console.error("Error loading linked jobs:", error);
+    return [];
+  }
+}
+
 // ==================== Data Management ====================
 
 export function clearAllData(): boolean {
   try {
     const db = getDb();
-    db.exec("DELETE FROM jobs; DELETE FROM candidates; DELETE FROM interviews; DELETE FROM conversations; DELETE FROM templates;");
+    db.exec("DELETE FROM jobs; DELETE FROM candidates; DELETE FROM interviews; DELETE FROM conversations; DELETE FROM templates; DELETE FROM scoring_rules;");
     return true;
   } catch (error) {
     console.error("Error clearing data:", error);

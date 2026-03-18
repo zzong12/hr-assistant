@@ -13,6 +13,8 @@ export interface Job {
   hired_count?: number;
   priority?: "low" | "medium" | "high";
   tags?: string[];
+  scoringRule?: ScoringRule;
+  scoringRuleId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -91,6 +93,62 @@ export interface ProjectExperience {
   technologies?: string[];
 }
 
+// ==================== Scoring Rule Types ====================
+
+export interface ScoringEvaluator {
+  method: "ai" | "keyword" | "duration" | "boolean" | "range";
+  keywords?: string[];
+  matchMode?: "any" | "all";
+  minYears?: number;
+  preferredYears?: number;
+  aiPrompt?: string;
+  minValue?: number;
+  maxValue?: number;
+  booleanField?: string;
+}
+
+export interface ScoringDimension {
+  id: string;
+  name: string;
+  weight: number;
+  description?: string;
+  type: "skills" | "experience" | "education" | "projects" | "custom";
+  evaluator: ScoringEvaluator;
+}
+
+export interface ScoringRule {
+  id: string;
+  name: string;
+  description?: string;
+  version: string;
+  dimensions: ScoringDimension[];
+  totalScore: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ScoringRuleSnapshot {
+  ruleId: string;
+  ruleName: string;
+  version: string;
+  dimensions: ScoringDimension[];
+  snapshotAt: Date;
+}
+
+export interface DimensionScore {
+  dimensionId: string;
+  dimensionName: string;
+  score: number;
+  maxScore: number;
+  weight: number;
+  weightedScore: number;
+  details?: {
+    matched?: string[];
+    missing?: string[];
+    notes?: string;
+  };
+}
+
 export interface JobMatch {
   jobId: string;
   jobTitle?: string;
@@ -99,6 +157,8 @@ export interface JobMatch {
   pros?: string[];
   cons?: string[];
   assessedAt?: Date;
+  scoringSnapshot?: ScoringRuleSnapshot;
+  dimensionScores?: DimensionScore[];
 }
 
 export type CandidateStatus =
@@ -235,6 +295,7 @@ export type TemplateCategory =
 export type ModuleId =
   | "chat"
   | "jobs"
+  | "scoring-rules"
   | "candidates"
   | "interviews"
   | "history"
