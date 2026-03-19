@@ -292,7 +292,7 @@ export default function InterviewsPage() {
     <div className="flex h-full min-h-0">
       {/* Left: List */}
       <div className="w-96 border-r border-border/40 bg-muted/10 flex flex-col min-h-0 overflow-hidden">
-        <div className="p-4 border-b border-border/40 space-y-3">
+        <div className="p-4 border-b border-border/40 space-y-3 page-drag-header">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold">面试管理</h1>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>

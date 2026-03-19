@@ -130,7 +130,7 @@ export default function HistoryPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
-      <div className="p-6 border-b border-border/40 glass flex-shrink-0">
+      <div className="p-6 border-b border-border/40 glass flex-shrink-0 page-drag-header">
         <h1 className="text-xl font-bold mb-1 gradient-text">历史记录</h1>
         <p className="text-xs text-muted-foreground mb-3">查看和管理过往对话</p>
         <div className="relative">

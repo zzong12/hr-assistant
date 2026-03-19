@@ -17,8 +17,7 @@
 /.next/
 /out/
 
-# production
-/build
+# production (Next.js output is in .next/, keeping build/ for electron icons)
 
 # misc
 .DS_Store
@@ -45,3 +44,9 @@ next-env.d.ts
 /data/*.db-wal
 /data/*.db-shm
 /data/resumes/
+
+# electron
+/dist-electron
+/build/*.icns
+/build/*.ico
+/build/*.png

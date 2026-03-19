@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus HR - 初始配置</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f8f9fb;
+      color: #1a1a2e;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      padding: 32px 32px 0;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 24px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header p {
+      color: #6b7280;
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .steps {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 24px 32px 0;
+    }
+    .step-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #d1d5db;
+      transition: all 0.3s;
+    }
+    .step-dot.active { background: #6366f1; width: 24px; border-radius: 4px; }
+    .step-dot.done { background: #22c55e; }
+    .content {
+      flex: 1;
+      padding: 24px 32px;
+      overflow-y: auto;
+    }
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #374151;
+    }
+    .form-group label .optional {
+      font-weight: 400;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      font-size: 14px;
+      background: #fff;
+      transition: border-color 0.2s;
+      outline: none;
+      font-family: inherit;
+    }
+    .form-group input:focus, .form-group select:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+    .form-group input.mono {
+      font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+      font-size: 13px;
+    }
+    .form-group .hint {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 4px;
+    }
+    .info-box {
+      background: #f0f0ff;
+      border: 1px solid #e0e0ff;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: #4338ca;
+      line-height: 1.6;
+    }
+    .footer {
+      padding: 16px 32px 24px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .btn {
+      padding: 10px 24px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff;
+    }
+    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+    }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .error-msg {
+      color: #ef4444;
+      font-size: 12px;
+      margin-top: 4px;
+      display: none;
+    }
+    .loading {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 40px;
+      text-align: center;
+    }
+    .loading.active { display: flex; flex-direction: column; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid #e5e7eb;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Nexus HR</h1>
+    <p>AI 招聘工作台 · 首次使用配置</p>
+  </div>
+
+  <div class="steps">
+    <div class="step-dot active" id="dot-0"></div>
+    <div class="step-dot" id="dot-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+  </div>
+
+  <div class="content">
+    <!-- Step 1: API Key -->
+    <div class="step-panel active" id="step-0">
+      <div class="info-box">
+        请配置 Claude API 密钥。这是使用 AI 功能的必需项。您也可以使用兼容 Anthropic 接口的第三方服务。
+      </div>
+      <div class="form-group">
+        <label>API 密钥 *</label>
+        <input type="password" id="apiKey" class="mono" placeholder="sk-ant-... 或第三方兼容密钥">
+        <div class="error-msg" id="apiKeyError">请输入有效的 API 密钥</div>
+      </div>
+      <div class="form-group">
+        <label>API 端点 <span class="optional">(可选，默认为 Anthropic 官方)</span></label>
+        <input type="url" id="apiBaseUrl" class="mono" placeholder="https://api.anthropic.com">
+        <div class="hint">如使用兼容服务（如智谱 BigModel），请填写对应端点</div>
+      </div>
+      <div class="form-group">
+        <label>模型</label>
+        <input type="text" id="model" list="modelList" value="claude-sonnet-4-20250514" placeholder="输入或选择模型名称">
+        <datalist id="modelList">
+          <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (推荐)</option>
+          <option value="claude-haiku-4-20250414">Claude Haiku 4</option>
+          <option value="claude-opus-4-20250918">Claude Opus 4</option>
+          <option value="claude-3-7-sonnet-20250219">Claude 3.7 Sonnet</option>
+          <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+          <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+        </datalist>
+        <div class="hint">可选择预置模型或直接输入自定义模型名称</div>
+      </div>
+    </div>
+
+    <!-- Step 2: Advanced Options -->
+    <div class="step-panel" id="step-1">
+      <div class="info-box">
+        以下为高级配置，通常保持默认值即可。
+      </div>
+      <div class="form-group">
+        <label>最大 Token 数</label>
+        <input type="number" id="maxTokens" value="4096" min="256" max="200000">
+        <div class="hint">AI 单次回复的最大长度，默认 4096</div>
+      </div>
+      <div class="form-group">
+        <label>Temperature</label>
+        <input type="number" id="temperature" value="0.7" min="0" max="1" step="0.1">
+        <div class="hint">控制回复的创造性，0 最保守，1 最随机</div>
+      </div>
+      <div class="form-group">
+        <label>服务端口</label>
+        <input type="number" id="port" value="3000" min="1024" max="65535">
+        <div class="hint">内部 Web 服务端口，如无冲突保持默认</div>
+      </div>
+      <div class="form-group">
+        <label>登录用户名 <span class="optional">(可选，留空则启动后无需登录)</span></label>
+        <input type="text" id="authUser" placeholder="留空跳过登录">
+      </div>
+      <div class="form-group">
+        <label>登录密码 <span class="optional">(可选)</span></label>
+        <input type="password" id="authPass" placeholder="留空跳过登录">
+      </div>
+    </div>
+
+    <!-- Step 3: Confirm -->
+    <div class="step-panel" id="step-2">
+      <div class="info-box">
+        请确认配置信息，点击「启动应用」开始使用。配置可随时在设置页面修改。
+      </div>
+      <div id="summary" style="background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e7eb;font-size:13px;line-height:2;"></div>
+      <div class="loading" id="loadingIndicator">
+        <div class="spinner"></div>
+        <p style="color:#6b7280;font-size:13px;margin-top:12px;">正在启动服务，请稍候...</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <button class="btn btn-secondary" id="btnBack" style="display:none;" onclick="prevStep()">上一步</button>
+    <div style="flex:1;"></div>
+    <button class="btn btn-primary" id="btnNext" onclick="nextStep()">下一步</button>
+  </div>
+
+  <script>
+    let currentStep = 0;
+    const totalSteps = 3;
+
+    function updateUI() {
+      for (let i = 0; i < totalSteps; i++) {
+        document.getElementById(`step-${i}`).classList.toggle('active', i === currentStep);
+        const dot = document.getElementById(`dot-${i}`);
+        dot.classList.remove('active', 'done');
+        if (i < currentStep) dot.classList.add('done');
+        else if (i === currentStep) dot.classList.add('active');
+      }
+      document.getElementById('btnBack').style.display = currentStep > 0 ? 'inline-block' : 'none';
+      document.getElementById('btnNext').textContent = currentStep === totalSteps - 1 ? '启动应用' : '下一步';
+    }
+
+    function getConfig() {
+      return {
+        ANTHROPIC_API_KEY: document.getElementById('apiKey').value.trim(),
+        ANTHROPIC_BASE_URL: document.getElementById('apiBaseUrl').value.trim() || undefined,
+        DEFAULT_CLAUDE_MODEL: document.getElementById('model').value,
+        MAX_TOKENS: parseInt(document.getElementById('maxTokens').value) || 4096,
+        TEMPERATURE: parseFloat(document.getElementById('temperature').value) || 0.7,
+        PORT: parseInt(document.getElementById('port').value) || 3000,
+        AUTH_USERNAME: document.getElementById('authUser').value.trim(),
+        AUTH_PASSWORD: document.getElementById('authPass').value.trim(),
+      };
+    }
+
+    function validateStep(step) {
+      if (step === 0) {
+        const key = document.getElementById('apiKey').value.trim();
+        const err = document.getElementById('apiKeyError');
+        if (!key || key.length < 10) {
+          err.style.display = 'block';
+          return false;
+        }
+        err.style.display = 'none';
+      }
+      return true;
+    }
+
+    function showSummary() {
+      const c = getConfig();
+      const maskKey = (k) => k ? k.substring(0, 8) + '...' + k.substring(k.length - 4) : '-';
+      document.getElementById('summary').innerHTML = `
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #f3f4f6;padding:4px 0;"><span style="color:#6b7280;">API 密钥</span><span style="font-family:monospace;">${maskKey(c.ANTHROPIC_API_KEY)}</span></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #f3f4f6;padding:4px 0;"><span style="color:#6b7280;">API 端点</span><span>${c.ANTHROPIC_BASE_URL || 'Anthropic 官方'}</span></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #f3f4f6;padding:4px 0;"><span style="color:#6b7280;">模型</span><span>${c.DEFAULT_CLAUDE_MODEL}</span></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #f3f4f6;padding:4px 0;"><span style="color:#6b7280;">Max Tokens</span><span>${c.MAX_TOKENS}</span></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid #f3f4f6;padding:4px 0;"><span style="color:#6b7280;">Temperature</span><span>${c.TEMPERATURE}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span style="color:#6b7280;">端口</span><span>${c.PORT}</span></div>
+      `;
+    }
+
+    async function nextStep() {
+      if (!validateStep(currentStep)) return;
+
+      if (currentStep === totalSteps - 1) {
+        const btn = document.getElementById('btnNext');
+        btn.disabled = true;
+        btn.textContent = '启动中...';
+        document.getElementById('summary').style.display = 'none';
+        document.getElementById('loadingIndicator').classList.add('active');
+
+        try {
+          const result = await window.electronAPI.setupComplete(getConfig());
+          if (result && !result.success) {
+            throw new Error(result.error || '未知错误');
+          }
+        } catch (err) {
+          alert('启动失败: ' + (err.message || err));
+          btn.disabled = false;
+          btn.textContent = '启动应用';
+          document.getElementById('summary').style.display = 'block';
+          document.getElementById('loadingIndicator').classList.remove('active');
+        }
+        return;
+      }
+
+      currentStep++;
+      if (currentStep === totalSteps - 1) showSummary();
+      updateUI();
+    }
+
+    function prevStep() {
+      if (currentStep > 0) {
+        currentStep--;
+        updateUI();
+      }
+    }
+
+    updateUI();
+  </script>
+</body>
+</html>

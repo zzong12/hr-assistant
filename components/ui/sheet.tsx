@@ -103,6 +103,8 @@ function SheetContent({
         )}
         {...props}
       >
+        <SheetPrimitive.Title className="sr-only">Panel</SheetPrimitive.Title>
+        <SheetPrimitive.Description className="sr-only">Panel content</SheetPrimitive.Description>
         {children}
         {showCloseButton && (
           <SheetPrimitive.Close asChild>

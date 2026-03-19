@@ -49,12 +49,12 @@ export function Sidebar() {
 
   return (
     <div
-      className={`border-r border-border bg-sidebar/80 backdrop-blur-xl flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
+      className={`app-sidebar border-r border-border bg-sidebar/80 backdrop-blur-xl flex flex-col min-h-0 transition-all duration-300 ease-in-out ${
         isSidebarCollapsed ? "w-[72px]" : "w-64"
       }`}
     >
-      {/* Logo */}
-      <div className="p-5 flex flex-col items-center border-b border-border/50">
+      {/* Logo — also serves as drag region on macOS Electron (traffic lights sit here) */}
+      <div className="p-5 flex flex-col items-center border-b border-border/50 page-drag-header mac-electron-top-spacing">
         <div className="flex items-center justify-between w-full">
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-3">
@@ -79,13 +79,13 @@ export function Sidebar() {
             </div>
           )}
           {!isSidebarCollapsed && (
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 opacity-40 hover:opacity-100 hover:bg-muted/50 rounded-full transition-all" onClick={toggleSidebar}>
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 opacity-40 hover:opacity-100 hover:bg-muted/50 rounded-full transition-all electron-no-drag" onClick={toggleSidebar}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
           )}
         </div>
         {isSidebarCollapsed && (
-          <Button variant="ghost" size="icon" className="h-7 w-7 mx-auto mt-3 opacity-40 hover:opacity-100 hover:bg-muted/50 rounded-full transition-all" onClick={toggleSidebar}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 mx-auto mt-3 opacity-40 hover:opacity-100 hover:bg-muted/50 rounded-full transition-all electron-no-drag" onClick={toggleSidebar}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         )}

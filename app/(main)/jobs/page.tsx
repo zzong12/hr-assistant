@@ -359,7 +359,7 @@ export default function JobsPage() {
   return (
     <div className="flex h-full min-h-0">
       <div className="w-96 border-r border-border/40 bg-muted/10 flex flex-col min-h-0 overflow-hidden">
-        <div className="p-4 border-b border-border/40 space-y-3">
+        <div className="p-4 border-b border-border/40 space-y-3 page-drag-header">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold flex items-center gap-2"><Briefcase className="w-5 h-5" />职位管理</h1>
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

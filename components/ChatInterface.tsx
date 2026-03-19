@@ -446,7 +446,7 @@ export function ChatInterface() {
       )}
 
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 h-14 border-b border-border/40 px-6 flex items-center justify-between glass">
+      <div className="absolute top-0 left-0 right-0 z-10 h-14 border-b border-border/40 px-6 flex items-center justify-between glass page-drag-header">
         <div className="flex items-center gap-3">
           <div className="relative flex items-center justify-center w-8 h-8">
             <div className="absolute inset-0 gradient-primary rounded-xl blur-[4px] opacity-40 animate-pulse" />

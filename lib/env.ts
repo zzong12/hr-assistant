@@ -171,9 +171,10 @@ export function validateEnvConfig(config: EnvConfig): {
 
   // 检查必需的API Key
   if (!config.anthropicApiKey || config.anthropicApiKey === "your_api_key_here") {
-    errors.push(
-      "ANTHROPIC_API_KEY is not configured. Please set it in .env.local file."
-    );
+    const hint = process.env.IS_ELECTRON
+      ? "ANTHROPIC_API_KEY is not configured. Please set it in Settings."
+      : "ANTHROPIC_API_KEY is not configured. Please set it in .env.local file.";
+    errors.push(hint);
   }
 
   // 检查API Key格式（支持原生 Anthropic 和兼容 API 如 BigModel）
@@ -258,7 +259,12 @@ export function getPublicEnvConfig() {
     appDescription: process.env.NEXT_PUBLIC_APP_DESCRIPTION,
     gaId: process.env.NEXT_PUBLIC_GA_ID,
     publicDsn: process.env.NEXT_PUBLIC_PUBLIC_DSN,
+    isElectron: process.env.IS_ELECTRON === "true",
   };
+}
+
+export function isElectronMode(): boolean {
+  return process.env.IS_ELECTRON === "true";
 }
 
 // 导出单例配置实例

@@ -1,0 +1,89 @@
+name: Build Electron Desktop App
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Resolve standalone symlinks
+        shell: bash
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          function copyDir(s, d) {
+            fs.mkdirSync(d, {recursive:true});
+            for (const e of fs.readdirSync(s,{withFileTypes:true})) {
+              const sp=path.join(s,e.name), dp=path.join(d,e.name);
+              if (e.isDirectory()) copyDir(sp,dp);
+              else if (e.isSymbolicLink()) {
+                const t=fs.realpathSync(sp);
+                fs.statSync(t).isDirectory()?copyDir(t,dp):fs.copyFileSync(t,dp);
+              } else fs.copyFileSync(sp,dp);
+            }
+          }
+          const dir='.next/standalone/.next/node_modules';
+          if (fs.existsSync(dir)) {
+            for (const e of fs.readdirSync(dir)) {
+              const p=path.join(dir,e);
+              if (fs.lstatSync(p).isSymbolicLink()) {
+                const t=fs.realpathSync(p);
+                console.log('Resolve:',e);
+                fs.unlinkSync(p);
+                fs.statSync(t).isDirectory()?copyDir(t,p):fs.copyFileSync(t,p);
+              }
+            }
+          }
+          "
+
+      - name: Compile Electron TypeScript
+        run: npx tsc -p electron/tsconfig.json
+
+      - name: Build Electron app (macOS)
+        if: matrix.platform == 'mac'
+        run: npx electron-builder --mac --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Electron app (Windows)
+        if: matrix.platform == 'win'
+        run: npx electron-builder --win --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-hr-${{ matrix.platform }}
+          path: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.exe
+          if-no-files-found: warn

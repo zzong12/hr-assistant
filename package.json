@@ -2,6 +2,9 @@
   "name": "hr-assistant",
   "version": "0.1.0",
   "private": true,
+  "description": "Nexus HR - AI 招聘工作台",
+  "author": "Wanlianyida",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,7 +12,14 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check-env": "node scripts/check-env.js",
-    "predev": "npm run check-env"
+    "predev": "npm run check-env",
+    "electron:compile": "tsc -p electron/tsconfig.json",
+    "electron:dev": "npm run electron:compile && electron .",
+    "electron:build": "node scripts/electron-build.js current",
+    "electron:build:mac": "node scripts/electron-build.js mac",
+    "electron:build:win": "node scripts/electron-build.js win",
+    "electron:build:all": "node scripts/electron-build.js all",
+    "postinstall": "electron-builder install-app-deps || true"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -42,6 +52,8 @@
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",

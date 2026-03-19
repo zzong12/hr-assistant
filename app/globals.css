@@ -129,6 +129,50 @@
     height: 100%;
   }
 
+  .electron-drag-region {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+  .electron-no-drag {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
+  /* macOS Electron: extra top padding below traffic lights */
+  .mac-electron .mac-electron-top-spacing {
+    padding-top: 30px;
+  }
+  /*
+   * macOS Electron: page headers and sidebar logo are draggable.
+   * backdrop-filter breaks -webkit-app-region: drag in Chromium,
+   * so we disable it on drag headers and the sidebar in Electron mode.
+   */
+  .mac-electron .page-drag-header {
+    -webkit-app-region: drag;
+    app-region: drag;
+    -webkit-user-select: none;
+    user-select: none;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--background) !important;
+  }
+  .mac-electron .app-sidebar {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--sidebar) !important;
+  }
+  .mac-electron .page-drag-header button,
+  .mac-electron .page-drag-header a,
+  .mac-electron .page-drag-header input,
+  .mac-electron .page-drag-header select,
+  .mac-electron .page-drag-header textarea,
+  .mac-electron .page-drag-header [role="button"],
+  .mac-electron .page-drag-header [role="combobox"],
+  .mac-electron .page-drag-header .electron-no-drag {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
   /* Custom Scrollbar for a premium feel */
   ::-webkit-scrollbar {
     width: 6px;

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Lock, User } from "lucide-react";
 import { NexusLogo } from "@/components/NexusLogo";
@@ -125,9 +125,20 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const [showDragBar, setShowDragBar] = useState(false);
+
+  useEffect(() => {
+    const api = (window as unknown as { electronAPI?: { isElectron?: boolean; platform?: string } }).electronAPI;
+    if (api?.isElectron && api.platform === "darwin") {
+      setShowDragBar(true);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
-      {/* Decorative blurred orbs */}
+      {showDragBar && (
+        <div className="fixed top-0 left-0 right-0 h-12 z-50 electron-drag-region" />
+      )}
       <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-primary/10 blur-[120px]" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] rounded-full bg-primary/5 blur-[100px]" />
 

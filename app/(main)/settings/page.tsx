@@ -8,9 +8,22 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Database, Download, Trash2, Info, Loader2, Bell, Send, MessageSquare,
+  Database, Download, Trash2, Info, Loader2, Bell, Send, MessageSquare, Settings2, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      getConfig: () => Promise<Record<string, unknown>>;
+      saveConfig: (config: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
+      restartServer: () => Promise<{ success: boolean; error?: string }>;
+      getAppInfo: () => Promise<{ version: string; name: string; dataPath: string; isPackaged: boolean; platform: string }>;
+      isElectron: boolean;
+      platform: string;
+    };
+  }
+}
 
 interface DataStats {
   jobs: number;
@@ -33,6 +46,22 @@ export default function SettingsPage() {
   const [savingApp, setSavingApp] = useState(false);
   const [testingNotify, setTestingNotify] = useState(false);
 
+  // Electron config state
+  const [isElectron, setIsElectron] = useState(false);
+  const [electronApiKey, setElectronApiKey] = useState("");
+  const [electronBaseUrl, setElectronBaseUrl] = useState("");
+  const [electronModel, setElectronModel] = useState("claude-sonnet-4-20250514");
+  const [electronMaxTokens, setElectronMaxTokens] = useState("4096");
+  const [electronTemp, setElectronTemp] = useState("0.7");
+  const [savingElectron, setSavingElectron] = useState(false);
+  const [restartingServer, setRestartingServer] = useState(false);
+  const [electronDataPath, setElectronDataPath] = useState("");
+  const [webhookOrigin, setWebhookOrigin] = useState("");
+
+  useEffect(() => {
+    setWebhookOrigin(typeof window !== "undefined" ? window.location.origin : "");
+  }, []);
+
   useEffect(() => {
     fetch("/api/data")
       .then((r) => r.json())
@@ -48,6 +77,31 @@ export default function SettingsPage() {
         setFeishuVerifyToken(data.feishu_verification_token || "");
       })
       .catch(() => {});
+
+    // Check if running in Electron
+    if (window.electronAPI?.isElectron) {
+      setIsElectron(true);
+      window.electronAPI.getConfig().then((config) => {
+        if (config) {
+          setElectronApiKey((config.ANTHROPIC_API_KEY as string) || "");
+          setElectronBaseUrl((config.ANTHROPIC_BASE_URL as string) || "");
+          setElectronModel((config.DEFAULT_CLAUDE_MODEL as string) || "claude-sonnet-4-20250514");
+          setElectronMaxTokens(String(config.MAX_TOKENS || 4096));
+          setElectronTemp(String(config.TEMPERATURE || 0.7));
+        }
+      });
+      window.electronAPI.getAppInfo().then((info) => {
+        setElectronDataPath(info.dataPath);
+      });
+    } else {
+      fetch("/api/electron")
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.isElectron) setIsElectron(true);
+          if (data.dataDir) setElectronDataPath(data.dataDir);
+        })
+        .catch(() => {});
+    }
   }, []);
 
   const handleSaveNotify = async () => {
@@ -97,6 +151,44 @@ export default function SettingsPage() {
     } finally { setTestingNotify(false); }
   };
 
+  const handleSaveElectronConfig = async () => {
+    if (!window.electronAPI) return;
+    setSavingElectron(true);
+    try {
+      const existing = await window.electronAPI.getConfig();
+      const updated = {
+        ...existing,
+        ANTHROPIC_API_KEY: electronApiKey,
+        ANTHROPIC_BASE_URL: electronBaseUrl || undefined,
+        DEFAULT_CLAUDE_MODEL: electronModel,
+        MAX_TOKENS: parseInt(electronMaxTokens) || 4096,
+        TEMPERATURE: parseFloat(electronTemp) || 0.7,
+      };
+      const result = await window.electronAPI.saveConfig(updated);
+      if (result.success) {
+        toast.success("应用配置已保存，重启服务后生效");
+      } else {
+        toast.error("保存失败: " + (result.error || "未知错误"));
+      }
+    } catch { toast.error("保存失败"); }
+    finally { setSavingElectron(false); }
+  };
+
+  const handleRestartServer = async () => {
+    if (!window.electronAPI) return;
+    setRestartingServer(true);
+    try {
+      const result = await window.electronAPI.restartServer();
+      if (result.success) {
+        toast.success("服务已重启");
+        setTimeout(() => window.location.reload(), 2000);
+      } else {
+        toast.error("重启失败: " + (result.error || "未知错误"));
+      }
+    } catch { toast.error("重启失败"); }
+    finally { setRestartingServer(false); }
+  };
+
   const handleExportAll = async () => {
     setExporting(true);
     try {
@@ -138,7 +230,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="p-6 border-b border-border/40 glass">
+      <div className="p-6 border-b border-border/40 glass page-drag-header">
         <h1 className="text-xl font-bold gradient-text">系统设置</h1>
         <p className="text-xs text-muted-foreground mt-1">配置通知、数据管理和系统参数</p>
       </div>
@@ -214,7 +306,7 @@ export default function SettingsPage() {
               <div className="bg-muted/40 rounded-xl p-4 border border-border/40 space-y-1.5">
                 <p className="text-sm font-medium">Webhook 回调地址</p>
                 <code className="block text-xs text-primary bg-primary/10 p-2 rounded-lg break-all select-all">
-                  {typeof window !== "undefined" ? window.location.origin : ""}/api/feishu/webhook
+                  {webhookOrigin ? `${webhookOrigin}/api/feishu/webhook` : "/api/feishu/webhook"}
                 </code>
                 <p className="text-[11px] text-muted-foreground">在飞书开放平台的"事件订阅"中填写此地址</p>
               </div>
@@ -264,6 +356,100 @@ export default function SettingsPage() {
               </div>
             </div>
           </Card>
+
+          {/* Electron App Config */}
+          {isElectron && (
+            <Card className="p-8 border-border/40 h-fit shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                  <Settings2 className="w-5 h-5 text-primary" />
+                </div>
+                <h2 className="text-xl font-semibold">应用配置</h2>
+              </div>
+              <div className="space-y-5">
+                <p className="text-sm text-muted-foreground leading-relaxed bg-primary/5 p-3 rounded-xl border border-primary/10">
+                  桌面应用核心配置。修改后需重启服务才能生效。
+                </p>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">API 密钥 *</Label>
+                  <Input
+                    type="password"
+                    placeholder="sk-ant-... 或兼容 API 密钥"
+                    value={electronApiKey}
+                    onChange={(e) => setElectronApiKey(e.target.value)}
+                    className="font-mono h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">API 端点 <span className="text-muted-foreground font-normal">(可选)</span></Label>
+                  <Input
+                    placeholder="https://api.anthropic.com (默认)"
+                    value={electronBaseUrl}
+                    onChange={(e) => setElectronBaseUrl(e.target.value)}
+                    className="font-mono h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">模型</Label>
+                  <Input
+                    list="electron-model-list"
+                    placeholder="输入或选择模型名称"
+                    value={electronModel}
+                    onChange={(e) => setElectronModel(e.target.value)}
+                    className="h-10"
+                  />
+                  <datalist id="electron-model-list">
+                    <option value="claude-sonnet-4-20250514" />
+                    <option value="claude-haiku-4-20250414" />
+                    <option value="claude-opus-4-20250918" />
+                    <option value="claude-3-7-sonnet-20250219" />
+                    <option value="claude-3-5-sonnet-20241022" />
+                    <option value="claude-3-5-haiku-20241022" />
+                  </datalist>
+                  <p className="text-xs text-muted-foreground">可选择预置模型或输入自定义模型名</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Max Tokens</Label>
+                    <Input
+                      type="number"
+                      value={electronMaxTokens}
+                      onChange={(e) => setElectronMaxTokens(e.target.value)}
+                      className="h-10"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Temperature</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="1"
+                      value={electronTemp}
+                      onChange={(e) => setElectronTemp(e.target.value)}
+                      className="h-10"
+                    />
+                  </div>
+                </div>
+                {electronDataPath && (
+                  <div className="bg-muted/40 rounded-xl p-4 border border-border/40 space-y-1">
+                    <p className="text-sm font-medium">数据存储路径</p>
+                    <code className="block text-xs text-primary bg-primary/10 p-2 rounded-lg break-all select-all">
+                      {electronDataPath}
+                    </code>
+                  </div>
+                )}
+                <div className="flex gap-3 pt-2">
+                  <Button onClick={handleSaveElectronConfig} disabled={savingElectron} className="flex-1">
+                    {savingElectron ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}保存配置
+                  </Button>
+                  <Button variant="outline" onClick={handleRestartServer} disabled={restartingServer} className="flex-1">
+                    {restartingServer ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}重启服务
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
 
           {/* About */}
           <Card className="p-8 border-border/40 h-fit shadow-sm hover:shadow-md transition-shadow">

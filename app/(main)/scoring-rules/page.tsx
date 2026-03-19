@@ -174,7 +174,7 @@ export default function ScoringRulesPage() {
     <div className="flex h-full">
       {/* Left: Rule List */}
       <div className="w-80 border-r border-border/50 flex flex-col shrink-0">
-        <div className="p-4 border-b border-border/50 space-y-3">
+        <div className="p-4 border-b border-border/50 space-y-3 page-drag-header">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold gradient-text flex items-center gap-2">
               <Target className="w-5 h-5" />

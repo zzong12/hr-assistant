@@ -1,0 +1,86 @@
+appId: com.wanlianyida.hr-assistant
+productName: "Nexus HR"
+copyright: "Copyright © 2024 Wanlianyida"
+
+directories:
+  output: dist-electron
+  buildResources: build
+
+files:
+  - "dist-electron/*.js"
+  - "electron/setup.html"
+  - "!electron/*.ts"
+  - "!electron/tsconfig.json"
+  - "!dist-electron/mac*"
+  - "!dist-electron/*.dmg"
+  - "!dist-electron/*.zip"
+  - "!dist-electron/*.blockmap"
+
+extraResources:
+  - from: ".next/standalone"
+    to: "standalone"
+    filter:
+      - "**/*"
+  - from: ".next/static"
+    to: "standalone/.next/static"
+    filter:
+      - "**/*"
+  - from: "public"
+    to: "standalone/public"
+    filter:
+      - "**/*"
+
+mac:
+  target:
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.business
+  icon: build/icon.icns
+  darkModeSupport: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  title: "Nexus HR"
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: "Nexus HR"
+
+asar: true
+
+asarUnpack:
+  - "node_modules/better-sqlite3/**"
+  - "node_modules/bindings/**"
+  - "node_modules/file-uri-to-path/**"
+  - "node_modules/prebuild-install/**"
+
+npmRebuild: true
+
+nodeGypRebuild: false
+
+buildDependenciesFromSource: false
+
+publish: null

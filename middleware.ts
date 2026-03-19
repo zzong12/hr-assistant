@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+function isAuthDisabled(): boolean {
+  const username = process.env.AUTH_USERNAME;
+  const password = process.env.AUTH_PASSWORD;
+  return !username && !password;
+}
+
 async function hashToken(input: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
@@ -16,6 +22,10 @@ async function verifyToken(token: string): Promise<boolean> {
 }
 
 export async function middleware(request: NextRequest) {
+  if (isAuthDisabled()) {
+    return NextResponse.next();
+  }
+
   const { pathname } = request.nextUrl;
 
   if (
