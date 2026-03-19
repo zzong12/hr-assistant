@@ -8,6 +8,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,7 +21,7 @@ import {
   Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs";
 import {
-  Briefcase, Plus, Search, Loader2, Sparkles, Trash2, Edit, ChevronDown, ChevronUp, Users, ChevronRight, Eye, Filter, Target,
+  Briefcase, Plus, Search, Loader2, Sparkles, Trash2, Edit, ChevronDown, ChevronUp, Users, ChevronRight, Eye, Filter, Target, Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CandidateDetailContent } from "@/components/CandidateDetailContent";
@@ -66,6 +67,9 @@ export default function JobsPage() {
   // Scoring snapshot dialog
   const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false);
   const [viewingSnapshot, setViewingSnapshot] = useState<ScoringRuleSnapshot | null>(null);
+
+  // Candidates sheet state
+  const [candidatesSheetOpen, setCandidatesSheetOpen] = useState(false);
 
   const loadJobs = async () => {
     try {
@@ -274,6 +278,75 @@ export default function JobsPage() {
     return matched;
   };
 
+  const getScoreDistribution = (jobId: string) => {
+    const matched = getMatchedCandidates(jobId);
+    const distribution = {
+      excellent: matched.filter(m => (m.match?.score || 0) >= 80).length,
+      good: matched.filter(m => {
+        const score = m.match?.score || 0;
+        return score >= 60 && score < 80;
+      }).length,
+      needsImprovement: matched.filter(m => (m.match?.score || 0) < 60).length,
+    };
+    return distribution;
+  };
+
+  function ScoreDistributionIndicator({ distribution }: { distribution: { excellent: number; good: number; needsImprovement: number } }) {
+    const total = distribution.excellent + distribution.good + distribution.needsImprovement;
+    if (total === 0) return null;
+
+    // 动态圆点大小：基础 8px，每增加 1 人增加 1px，最大 16px
+    const getDotSize = (count: number) => {
+      const baseSize = 8;
+      const maxSize = 16;
+      return Math.min(baseSize + count, maxSize);
+    };
+
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <div
+            className="flex items-center gap-1.5 ml-2 group relative cursor-pointer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className="rounded-full bg-green-500 transition-all"
+              style={{ width: getDotSize(distribution.excellent), height: getDotSize(distribution.excellent) }}
+            />
+            <div
+              className="rounded-full bg-amber-500 transition-all"
+              style={{ width: getDotSize(distribution.good), height: getDotSize(distribution.good) }}
+            />
+            <div
+              className="rounded-full bg-red-500 transition-all"
+              style={{ width: getDotSize(distribution.needsImprovement), height: getDotSize(distribution.needsImprovement) }}
+            />
+            <Info className="w-3 h-3 text-muted-foreground/60 group-hover:text-muted-foreground transition-colors" />
+          </div>
+        </PopoverTrigger>
+        <PopoverContent side="bottom" className="w-auto p-3" align="start">
+          <div className="space-y-1.5 text-xs">
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+              <span>优秀 (≥80分): <strong>{distribution.excellent}</strong> 人</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+              <span>良好 (60-79分): <strong>{distribution.good}</strong> 人</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+              <span>待提升 (&lt;60分): <strong>{distribution.needsImprovement}</strong> 人</span>
+            </div>
+            <div className="pt-1 border-t border-border/50 text-muted-foreground">
+              共计 {total} 位候选人
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
   const filtered = jobs.filter((j) => {
     if (statusFilter !== "all" && j.status !== statusFilter) return false;
     if (searchQuery) {
@@ -436,6 +509,19 @@ export default function JobsPage() {
                   </div>
                   <div className="flex gap-2">
                     <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => setCandidatesSheetOpen(true)}
+                    >
+                      <Users className="w-4 h-4 mr-2" />
+                      匹配候选人
+                      <Badge variant="secondary" className="ml-2">
+                        {getMatchedCandidates(selectedJob.id).length}
+                      </Badge>
+                      <ScoreDistributionIndicator distribution={getScoreDistribution(selectedJob.id)} />
+                    </Button>
+                    <Button
                       variant="ghost"
                       size="icon"
                       title="编辑职位"
@@ -518,168 +604,6 @@ export default function JobsPage() {
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* 右侧：匹配的候选人 */}
-            <div className="w-96 overflow-y-auto border-l border-border bg-muted/30">
-              {(() => {
-                const matchedCandidates = getMatchedCandidates(selectedJob.id);
-                const jobDimensions = selectedJob.scoringRule?.dimensions || [];
-
-                return (
-                  <div className="sticky top-0 h-full flex flex-col">
-                    <div className="p-4 border-b border-border bg-background space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold flex items-center gap-2">
-                          <Users className="w-4 h-4 text-primary" />
-                          匹配的候选人
-                        </h3>
-                        <Badge variant="secondary">{matchedCandidates.length} 位</Badge>
-                      </div>
-
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input
-                          placeholder="搜索候选人姓名..."
-                          value={candidateSearchQuery}
-                          onChange={(e) => setCandidateSearchQuery(e.target.value)}
-                          className="pl-9 h-9 text-sm"
-                        />
-                      </div>
-
-                      <div className="flex gap-2">
-                        <Select value={candidateScoreFilter} onValueChange={setCandidateScoreFilter}>
-                          <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">全部分数</SelectItem>
-                            <SelectItem value="80">80分以上</SelectItem>
-                            <SelectItem value="60">60分以上</SelectItem>
-                            <SelectItem value="0">60分以下</SelectItem>
-                          </SelectContent>
-                        </Select>
-
-                        <Select value={candidateSortBy} onValueChange={setCandidateSortBy}>
-                          <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="score">按总分</SelectItem>
-                            <SelectItem value="name">按姓名</SelectItem>
-                            {jobDimensions.map(dim => (
-                              <SelectItem key={dim.id} value={`dim:${dim.id}`}>按{dim.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Dimension filter */}
-                      {jobDimensions.length > 0 && (
-                        <div className="flex gap-2 items-center">
-                          <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <Select value={dimensionFilterId} onValueChange={setDimensionFilterId}>
-                            <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="按维度筛选" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">不限维度</SelectItem>
-                              {jobDimensions.map(dim => (
-                                <SelectItem key={dim.id} value={dim.id}>{dim.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {dimensionFilterId !== "none" && (
-                            <Select value={dimensionMinScore} onValueChange={setDimensionMinScore}>
-                              <SelectTrigger className="h-8 text-xs w-24"><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="0">不限</SelectItem>
-                                <SelectItem value="60">≥60分</SelectItem>
-                                <SelectItem value="70">≥70分</SelectItem>
-                                <SelectItem value="80">≥80分</SelectItem>
-                                <SelectItem value="90">≥90分</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <ScrollArea className="flex-1">
-                      <div className="p-4 space-y-2">
-                        {matchedCandidates.length === 0 ? (
-                          <div className="text-center py-8">
-                            <Users className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
-                            <p className="text-sm text-muted-foreground">暂无匹配候选人</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {candidateSearchQuery || candidateScoreFilter !== "all" || dimensionFilterId !== "none"
-                                ? "尝试调整筛选条件"
-                                : "请先在候选人页面进行匹配"}
-                            </p>
-                          </div>
-                        ) : (
-                        matchedCandidates.map(({ candidate, match }) => (
-                          <Card
-                            key={candidate.id}
-                            className={`
-                              p-3 cursor-pointer transition-all duration-200 border-l-4
-                              hover:shadow-md hover:border-opacity-80
-                              ${getScoreBorderColor(match!.score)}
-                              ${getScoreBgColor(match!.score)}
-                            `}
-                            onClick={() => openCandidateSheet(candidate, match!)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`
-                                w-10 h-10 rounded-full flex items-center justify-center
-                                font-semibold text-sm shrink-0
-                                ${match!.score >= 80 ? "bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-100" :
-                                  match!.score >= 60 ? "bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-100" :
-                                  "bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-100"}
-                              `}>
-                                {candidate.name.charAt(0)}
-                              </div>
-
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <p className="font-semibold text-sm">{candidate.name}</p>
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-[10px] h-5 px-1.5 border-0 shrink-0 ${getScoreTextColor(match!.score)} ${getScoreBgColor(match!.score)}`}
-                                  >
-                                    {match!.score}分
-                                  </Badge>
-                                </div>
-
-                                {/* Dimension score mini bars */}
-                                {match!.dimensionScores && match!.dimensionScores.length > 0 && (
-                                  <div className="space-y-1 mt-1.5">
-                                    {match!.dimensionScores.slice(0, 3).map(ds => (
-                                      <div key={ds.dimensionId} className="flex items-center gap-1.5">
-                                        <span className="text-[9px] text-muted-foreground w-12 truncate shrink-0">{ds.dimensionName}</span>
-                                        <div className="flex-1 h-1.5 rounded-full bg-muted/50 overflow-hidden">
-                                          <div
-                                            className={`h-full rounded-full transition-all ${
-                                              ds.score >= 80 ? "bg-green-500" : ds.score >= 60 ? "bg-amber-500" : "bg-red-400"
-                                            }`}
-                                            style={{ width: `${ds.score}%` }}
-                                          />
-                                        </div>
-                                        <span className="text-[9px] text-muted-foreground w-6 text-right shrink-0">{ds.score}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {!match!.dimensionScores && match!.reason && (
-                                  <p className="text-[11px] text-muted-foreground line-clamp-1 mt-1">{match!.reason}</p>
-                                )}
-                              </div>
-
-                              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                            </div>
-                          </Card>
-                        ))
-                      )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                );
-              })()}
             </div>
           </>
         ) : (
@@ -826,6 +750,172 @@ export default function JobsPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Candidates List Sheet */}
+      {selectedJob && (
+        <Sheet open={candidatesSheetOpen} onOpenChange={setCandidatesSheetOpen}>
+          <SheetContent side="right" size="lg" className="p-0 w-[420px]">
+            {(() => {
+              const matchedCandidates = getMatchedCandidates(selectedJob.id);
+              const jobDimensions = selectedJob.scoringRule?.dimensions || [];
+
+              return (
+                <div className="h-full flex flex-col">
+                  <div className="p-4 border-b border-border bg-background space-y-3 shrink-0">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <Users className="w-4 h-4 text-primary" />
+                        匹配的候选人
+                      </h3>
+                      <Badge variant="secondary">{matchedCandidates.length} 位</Badge>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="搜索候选人姓名..."
+                        value={candidateSearchQuery}
+                        onChange={(e) => setCandidateSearchQuery(e.target.value)}
+                        className="pl-9 h-9 text-sm"
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Select value={candidateScoreFilter} onValueChange={setCandidateScoreFilter}>
+                        <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">全部分数</SelectItem>
+                          <SelectItem value="80">80分以上</SelectItem>
+                          <SelectItem value="60">60分以上</SelectItem>
+                          <SelectItem value="0">60分以下</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <Select value={candidateSortBy} onValueChange={setCandidateSortBy}>
+                        <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="score">按总分</SelectItem>
+                          <SelectItem value="name">按姓名</SelectItem>
+                          {jobDimensions.map(dim => (
+                            <SelectItem key={dim.id} value={`dim:${dim.id}`}>按{dim.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Dimension filter */}
+                    {jobDimensions.length > 0 && (
+                      <div className="flex gap-2 items-center">
+                        <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <Select value={dimensionFilterId} onValueChange={setDimensionFilterId}>
+                          <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="按维度筛选" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">不限维度</SelectItem>
+                            {jobDimensions.map(dim => (
+                              <SelectItem key={dim.id} value={dim.id}>{dim.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {dimensionFilterId !== "none" && (
+                          <Select value={dimensionMinScore} onValueChange={setDimensionMinScore}>
+                            <SelectTrigger className="h-8 text-xs w-24"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">不限</SelectItem>
+                              <SelectItem value="60">≥60分</SelectItem>
+                              <SelectItem value="70">≥70分</SelectItem>
+                              <SelectItem value="80">≥80分</SelectItem>
+                              <SelectItem value="90">≥90分</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <ScrollArea className="flex-1">
+                    <div className="p-4 space-y-2">
+                      {matchedCandidates.length === 0 ? (
+                        <div className="text-center py-8">
+                          <Users className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
+                          <p className="text-sm text-muted-foreground">暂无匹配候选人</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {candidateSearchQuery || candidateScoreFilter !== "all" || dimensionFilterId !== "none"
+                              ? "尝试调整筛选条件"
+                              : "请先在候选人页面进行匹配"}
+                          </p>
+                        </div>
+                      ) : (
+                        matchedCandidates.map(({ candidate, match }) => (
+                          <Card
+                            key={candidate.id}
+                            className={`
+                              p-3 cursor-pointer transition-all duration-200 border-l-4
+                              hover:shadow-md hover:border-opacity-80
+                              ${getScoreBorderColor(match!.score)}
+                              ${getScoreBgColor(match!.score)}
+                            `}
+                            onClick={() => openCandidateSheet(candidate, match!)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`
+                                w-10 h-10 rounded-full flex items-center justify-center
+                                font-semibold text-sm shrink-0
+                                ${match!.score >= 80 ? "bg-green-200 dark:bg-green-900 text-green-800 dark:text-green-100" :
+                                  match!.score >= 60 ? "bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-100" :
+                                  "bg-red-200 dark:bg-red-900 text-red-800 dark:text-red-100"}
+                              `}>
+                                {candidate.name.charAt(0)}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-semibold text-sm">{candidate.name}</p>
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[10px] h-5 px-1.5 border-0 shrink-0 ${getScoreTextColor(match!.score)} ${getScoreBgColor(match!.score)}`}
+                                  >
+                                    {match!.score}分
+                                  </Badge>
+                                </div>
+
+                                {/* Dimension score mini bars */}
+                                {match!.dimensionScores && match!.dimensionScores.length > 0 && (
+                                  <div className="space-y-1 mt-1.5">
+                                    {match!.dimensionScores.slice(0, 3).map(ds => (
+                                      <div key={ds.dimensionId} className="flex items-center gap-1.5">
+                                        <span className="text-[9px] text-muted-foreground w-12 truncate shrink-0">{ds.dimensionName}</span>
+                                        <div className="flex-1 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all ${
+                                              ds.score >= 80 ? "bg-green-500" : ds.score >= 60 ? "bg-amber-500" : "bg-red-400"
+                                            }`}
+                                            style={{ width: `${ds.score}%` }}
+                                          />
+                                        </div>
+                                        <span className="text-[9px] text-muted-foreground w-6 text-right shrink-0">{ds.score}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {!match!.dimensionScores && match!.reason && (
+                                  <p className="text-[11px] text-muted-foreground line-clamp-1 mt-1">{match!.reason}</p>
+                                )}
+                              </div>
+
+                              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                            </div>
+                          </Card>
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
+                </div>
+              );
+            })()}
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Scoring Rule Snapshot Dialog */}
       <Dialog open={snapshotDialogOpen} onOpenChange={setSnapshotDialogOpen}>
