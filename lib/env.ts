@@ -108,7 +108,7 @@ export function loadEnvConfig(): EnvConfig {
 
     // 应用配置
     appName: getEnvVar("NEXT_PUBLIC_APP_NAME", "Nexus HR"),
-    appVersion: getEnvVar("NEXT_PUBLIC_APP_VERSION", "1.0.0"),
+    appVersion: getEnvVar("NEXT_PUBLIC_APP_VERSION", "2.1.0"),
     appDescription: process.env.NEXT_PUBLIC_APP_DESCRIPTION,
 
     // 环境
@@ -255,7 +255,7 @@ export function printEnvStatus(config: EnvConfig): void {
 export function getPublicEnvConfig() {
   return {
     appName: process.env.NEXT_PUBLIC_APP_NAME || "Nexus HR",
-    appVersion: process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0",
+    appVersion: process.env.NEXT_PUBLIC_APP_VERSION || "2.1.0",
     appDescription: process.env.NEXT_PUBLIC_APP_DESCRIPTION,
     gaId: process.env.NEXT_PUBLIC_GA_ID,
     publicDsn: process.env.NEXT_PUBLIC_PUBLIC_DSN,

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,10 +28,8 @@ import type { Conversation } from "@/lib/types";
 
 export default function HistoryPage() {
   const router = useRouter();
-  const conversations = useStore((s) => s.conversations);
+  const setConversations = useStore((s) => s.setConversations);
   const setCurrentConversation = useStore((s) => s.setCurrentConversation);
-  const deleteConversation = useStore((s) => s.deleteConversation);
-  const updateConversation = useStore((s) => s.updateConversation);
   const [searchQuery, setSearchQuery] = useState("");
   const [serverConversations, setServerConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,21 +42,17 @@ export default function HistoryPage() {
     try {
       const res = await fetch("/api/conversations");
       const data = await res.json();
-      setServerConversations(data.conversations || []);
+      const conversations = data.conversations || [];
+      setServerConversations(conversations);
+      setConversations(conversations);
     } catch {
-      // fall back to store data
+      // keep existing in-memory state on failure
     } finally {
       setLoading(false);
     }
   };
 
-  // Merge store and server conversations
-  const allConversations = [
-    ...conversations,
-    ...serverConversations.filter(
-      (sc) => !conversations.find((c) => c.id === sc.id)
-    ),
-  ].sort(
+  const allConversations = [...serverConversations].sort(
     (a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
@@ -74,18 +67,51 @@ export default function HistoryPage() {
   });
 
   const handleOpen = (conv: Conversation) => {
-    setCurrentConversation(conv);
+    setCurrentConversation({
+      ...conv,
+      createdAt: new Date(conv.createdAt),
+      updatedAt: new Date(conv.updatedAt),
+      messages: conv.messages.map((m) => ({
+        ...m,
+        timestamp: new Date(m.timestamp),
+      })),
+    });
     router.push("/");
   };
 
-  const handleDelete = (id: string) => {
-    deleteConversation(id);
-    fetch(`/api/conversations?id=${id}`, { method: "DELETE" }).catch(() => {});
+  const handleDelete = async (id: string) => {
+    const res = await fetch(`/api/conversations?id=${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      toast.error("删除失败");
+      return;
+    }
+    const next = serverConversations.filter((c) => c.id !== id);
+    setServerConversations(next);
+    setConversations(next);
     toast.success("对话已删除");
   };
 
-  const handleToggleFavorite = (conv: Conversation) => {
-    updateConversation(conv.id, { favorite: !conv.favorite });
+  const handleToggleFavorite = async (conv: Conversation) => {
+    const updated = {
+      ...conv,
+      favorite: !conv.favorite,
+      updatedAt: new Date(),
+    };
+    const res = await fetch("/api/conversations", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    });
+    if (!res.ok) {
+      toast.error("更新失败");
+      return;
+    }
+
+    const next = serverConversations.map((item) =>
+      item.id === updated.id ? updated : item
+    );
+    setServerConversations(next);
+    setConversations(next);
     toast.success(conv.favorite ? "已取消收藏" : "已收藏");
   };
 

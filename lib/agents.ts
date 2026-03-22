@@ -692,11 +692,12 @@ export class AgentManager {
    */
   async processMessage(
     message: string,
-    conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = []
+    conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [],
+    forcedAgentId?: string
   ): Promise<AgentResponse> {
     try {
       // Route to appropriate agent
-      const agentId = this.routeToAgent(message);
+      const agentId = forcedAgentId || this.routeToAgent(message);
       const agent = this.agents.get(agentId);
 
       if (!agent) {
@@ -748,11 +749,12 @@ export class AgentManager {
    */
   async *streamMessage(
     message: string,
-    conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = []
+    conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = [],
+    forcedAgentId?: string
   ): AsyncGenerator<string, void, unknown> {
     try {
       // Route to appropriate agent
-      const agentId = this.routeToAgent(message);
+      const agentId = forcedAgentId || this.routeToAgent(message);
       const agent = this.agents.get(agentId);
 
       if (!agent) {

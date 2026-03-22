@@ -16,7 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Users, Upload, Search, Loader2, FileText, Sparkles, Trash2, Edit, X, Plus,
+  Users, Upload, Search, Loader2, FileText, Sparkles, Trash2, Edit, X, Plus, ChevronsUpDown, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Candidate, Job } from "@/lib/types";
@@ -45,7 +45,11 @@ export default function CandidatesPage() {
   const [matchingAll, setMatchingAll] = useState(false);
   const [batchMatching, setBatchMatching] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+  const [batchFailedTasks, setBatchFailedTasks] = useState<Array<{ candidateId: string; jobId: string; error?: string }>>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [showLegacyBatchActions, setShowLegacyBatchActions] = useState(false);
+  const [showJobSelector, setShowJobSelector] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
   const [deleting, setDeleting] = useState(false);
@@ -134,6 +138,118 @@ export default function CandidatesPage() {
     loadData();
   };
 
+  const toggleJobSelection = (jobId: string) => {
+    setSelectedJobIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  };
+
+  const handleSelectAllJobs = () => {
+    const activeJobIds = jobs.filter((j) => j.status === "active").map((j) => j.id);
+    setSelectedJobIds(new Set(activeJobIds));
+  };
+
+  const handleClearJobs = () => {
+    setSelectedJobIds(new Set());
+  };
+
+  const handlePreciseBatchMatch = async (retryFailedOnly = false) => {
+    const activeJobIds = jobs.filter((j) => j.status === "active").map((j) => j.id);
+    const chosenJobIds = Array.from(selectedJobIds).filter((id) => activeJobIds.includes(id));
+    const chosenCandidateIds = retryFailedOnly
+      ? Array.from(new Set(batchFailedTasks.map((t) => t.candidateId)))
+      : Array.from(selectedIds);
+
+    if (chosenCandidateIds.length === 0) {
+      toast.info(retryFailedOnly ? "暂无失败任务可重试" : "请先选择候选人");
+      return;
+    }
+    if (!retryFailedOnly && chosenJobIds.length === 0) {
+      toast.info("请先选择职位");
+      return;
+    }
+
+    const estimated = retryFailedOnly
+      ? batchFailedTasks.length
+      : chosenCandidateIds.length * chosenJobIds.length;
+
+    const proceed = confirm(`将执行 ${estimated} 个匹配任务，是否继续？`);
+    if (!proceed) return;
+
+    setBatchMatching(true);
+    setBatchProgress({ done: 0, total: estimated });
+    setBatchFailedTasks([]);
+
+    const allResults: Array<{ candidateId: string; jobId: string; ok: boolean; error?: string }> = [];
+    let processed = 0;
+
+    if (retryFailedOnly) {
+      const grouped = new Map<string, string[]>();
+      for (const item of batchFailedTasks) {
+        const existing = grouped.get(item.candidateId) || [];
+        existing.push(item.jobId);
+        grouped.set(item.candidateId, existing);
+      }
+
+      for (const [candidateId, jobIds] of grouped.entries()) {
+        try {
+          const res = await fetch("/api/candidates/match-batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ candidateIds: [candidateId], jobIds }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "匹配失败");
+          if (Array.isArray(data.results)) allResults.push(...data.results);
+        } catch {
+          for (const jobId of jobIds) {
+            allResults.push({ candidateId, jobId, ok: false, error: "请求失败" });
+          }
+        }
+        processed += jobIds.length;
+        setBatchProgress({ done: processed, total: estimated });
+      }
+    } else {
+      for (const candidateId of chosenCandidateIds) {
+        try {
+          const res = await fetch("/api/candidates/match-batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ candidateIds: [candidateId], jobIds: chosenJobIds }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "匹配失败");
+          if (Array.isArray(data.results)) allResults.push(...data.results);
+        } catch {
+          for (const jobId of chosenJobIds) {
+            allResults.push({ candidateId, jobId, ok: false, error: "请求失败" });
+          }
+        }
+        processed += chosenJobIds.length;
+        setBatchProgress({ done: processed, total: estimated });
+      }
+    }
+
+    const failedTasks = allResults.filter((r) => !r.ok).map((r) => ({
+      candidateId: r.candidateId,
+      jobId: r.jobId,
+      error: r.error,
+    }));
+    const success = allResults.length - failedTasks.length;
+    setBatchFailedTasks(failedTasks);
+    setBatchMatching(false);
+
+    if (failedTasks.length > 0) {
+      toast.warning(`匹配完成：${success}/${allResults.length} 成功，失败 ${failedTasks.length}`);
+    } else {
+      toast.success(`匹配完成：${success}/${allResults.length} 成功`);
+    }
+    loadData();
+  };
+
   const getTopScore = (c: Candidate): number => {
     if (!c.matchedJobs?.length) return -1;
     return Math.max(...c.matchedJobs.map(m => m.score));
@@ -148,6 +264,7 @@ export default function CandidatesPage() {
   const matchedJobTitles = Array.from(new Set(
     candidates.flatMap(c => c.matchedJobs?.map(m => m.jobTitle).filter(Boolean) || [])
   )) as string[];
+  const activeJobs = jobs.filter((j) => j.status === "active");
 
   const handleStatusChange = async (id: string, status: string) => {
     const res = await fetch("/api/candidates", {
@@ -352,7 +469,7 @@ export default function CandidatesPage() {
   return (
     <div className="flex h-full min-h-0">
       <div className="w-96 border-r border-border/40 bg-muted/10 flex flex-col min-h-0 overflow-hidden">
-        <div className="p-4 border-b border-border/40 space-y-3 page-drag-header">
+        <div className="p-4 border-b border-border/40 space-y-3 page-drag-header shrink-0 max-h-[56vh] overflow-y-auto">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5" />候选人</h1>
             <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
@@ -402,17 +519,101 @@ export default function CandidatesPage() {
               </SelectContent>
             </Select>
           )}
-          <Button
-            size="sm" variant="outline" className="w-full"
-            onClick={handleBatchMatchAll}
-            disabled={batchMatching}
-          >
-            {batchMatching ? (
-              <><Loader2 className="w-3 h-3 mr-1 animate-spin" />匹配中 {batchProgress.done}/{batchProgress.total}</>
-            ) : (
-              <><Sparkles className="w-3 h-3 mr-1" />一键匹配所有候选人</>
-            )}
-          </Button>
+          <Card className="p-3 border-border/40 bg-card/70">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-foreground">精准匹配任务</p>
+                <Badge variant="secondary" className="text-[10px]">
+                  候选人 {selectedIds.size} · 职位 {selectedJobIds.size}
+                </Badge>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={handleSelectAll}>
+                  {selectedIds.size === filtered.length ? "取消全选候选人" : "全选当前候选人"}
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setShowJobSelector((v) => !v)}>
+                  {showJobSelector ? "收起职位选择" : "展开职位选择"}
+                </Button>
+              </div>
+              {showJobSelector && (
+                <>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={handleSelectAllJobs}>
+                      全选职位
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={handleClearJobs}>
+                      清空职位
+                    </Button>
+                  </div>
+                  <div className="max-h-28 overflow-y-auto rounded-lg border border-border/40 p-2 space-y-1 bg-muted/20">
+                    {activeJobs.length === 0 && <p className="text-[11px] text-muted-foreground">暂无在招职位</p>}
+                    {activeJobs.map((job) => (
+                      <label key={job.id} className="flex items-center gap-2 text-[11px] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedJobIds.has(job.id)}
+                          onChange={() => toggleJobSelection(job.id)}
+                          className="w-3.5 h-3.5 rounded border-border"
+                        />
+                        <span className="truncate">{job.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+              {!showJobSelector && (
+                <p className="text-[11px] text-muted-foreground">职位选择已折叠，当前已选 {selectedJobIds.size} 个职位</p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => handlePreciseBatchMatch(false)}
+                  disabled={batchMatching}
+                >
+                  {batchMatching ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                  {batchMatching ? `执行中 ${batchProgress.done}/${batchProgress.total}` : "执行精准匹配"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={batchMatching || batchFailedTasks.length === 0}
+                  onClick={() => handlePreciseBatchMatch(true)}
+                >
+                  重试失败({batchFailedTasks.length})
+                </Button>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="w-full text-[11px] h-7"
+                onClick={() => setShowLegacyBatchActions((v) => !v)}
+              >
+                <ChevronsUpDown className="w-3 h-3 mr-1" />
+                高级批量操作
+              </Button>
+              {showLegacyBatchActions && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 space-y-2">
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-amber-500" />
+                    高算力操作：对所有候选人匹配全部在招职位
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full text-amber-700 border-amber-500/40 hover:bg-amber-500/10"
+                    onClick={handleBatchMatchAll}
+                    disabled={batchMatching}
+                  >
+                    <Sparkles className="w-3 h-3 mr-1" />
+                    一键匹配所有候选人（高级）
+                  </Button>
+                </div>
+              )}
+            </div>
+          </Card>
         </div>
 
         {selectedIds.size > 0 && (
@@ -525,7 +726,7 @@ export default function CandidatesPage() {
                   {analyzing ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}AI重新分析
                 </Button>
                 <Select onValueChange={(jobId) => handleMatch(selectedCandidate.id, jobId)} disabled={matching}>
-                  <SelectTrigger className="w-40"><SelectValue placeholder={matching ? "匹配中..." : "匹配职位"} /></SelectTrigger>
+                  <SelectTrigger className="w-44"><SelectValue placeholder={matching ? "匹配中..." : "匹配职位（高级）"} /></SelectTrigger>
                   <SelectContent>{jobs.filter((j) => j.status === "active").map((j) => <SelectItem key={j.id} value={j.id}>{j.title}</SelectItem>)}</SelectContent>
                 </Select>
                 <Button
@@ -535,7 +736,7 @@ export default function CandidatesPage() {
                   className="shrink-0"
                 >
                   {matchingAll ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-                  {matchingAll ? "匹配中..." : "智能匹配全部"}
+                  {matchingAll ? "匹配中..." : "智能匹配全部（高级）"}
                 </Button>
               </div>
 
@@ -835,7 +1036,7 @@ function ResumeDropZone({ onUploaded }: { onUploaded: (newCandidate?: Candidate)
         <input ref={fileInputRef} type="file" accept=".pdf,.txt,.doc,.docx" multiple className="hidden" onChange={(e) => e.target.files && handleFiles(e.target.files)} />
         <Upload className={`w-10 h-10 mx-auto mb-3 transition-transform duration-300 group-hover:scale-110 ${isDragging ? "text-primary" : "text-muted-foreground"}`} />
         <p className="font-medium">{isDragging ? "松开上传" : "拖拽简历文件到这里"}</p>
-        <p className="text-sm text-muted-foreground mt-1">支持 PDF、TXT 格式，可批量上传</p>
+        <p className="text-sm text-muted-foreground mt-1">支持 PDF、Word（DOC/DOCX）、TXT 格式，可批量上传</p>
         {uploading && <div className="flex items-center justify-center gap-2 mt-3"><Loader2 className="w-4 h-4 animate-spin" /><span className="text-sm">处理中...</span></div>}
       </div>
 

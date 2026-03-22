@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { formatJDAsMarkdown } from "@/lib/jd-utils";
 import { getAgentManager } from "@/lib/agents";
-import { generateId, saveJob } from "@/lib/storage";
+import { generateId, saveJob, getStorageInitErrorMessage } from "@/lib/storage";
 import type { Job } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -135,7 +135,14 @@ ${textToAnalyze}
 
         if (shouldSave) {
           const { saveJob } = await import("@/lib/storage");
-          saveJob(job as any);
+          const saved = saveJob(job as any);
+          if (!saved) {
+            const storageError = getStorageInitErrorMessage();
+            return NextResponse.json(
+              { error: storageError || "职位保存失败，请检查存储服务" },
+              { status: 500 }
+            );
+          }
 
           // Send Feishu notification
           try {
@@ -208,7 +215,14 @@ ${requirements ? `其他要求: ${requirements.join(", ")}` : ""}
 
     // Save job if requested
     if (shouldSave) {
-      saveJob(job);
+      const saved = saveJob(job);
+      if (!saved) {
+        const storageError = getStorageInitErrorMessage();
+        return NextResponse.json(
+          { error: storageError || "职位保存失败，请检查存储服务" },
+          { status: 500 }
+        );
+      }
     }
 
     // Format as markdown

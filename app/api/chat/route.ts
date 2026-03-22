@@ -6,7 +6,12 @@ export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message, conversationHistory = [], stream: useStream = false } = body;
+    const {
+      message,
+      conversationHistory = [],
+      stream: useStream = false,
+      forcedAgent,
+    } = body;
 
     if (!message || typeof message !== "string") {
       return NextResponse.json(
@@ -16,11 +21,25 @@ export async function POST(request: NextRequest) {
     }
 
     const agentManager = getAgentManager();
+    const availableAgentIds = new Set(agentManager.getAllAgents().map((agent) => agent.id));
+    if (forcedAgent !== undefined) {
+      if (typeof forcedAgent !== "string" || !availableAgentIds.has(forcedAgent)) {
+        return NextResponse.json(
+          {
+            error: "Invalid forcedAgent",
+            availableAgents: Array.from(availableAgentIds),
+          },
+          { status: 400 }
+        );
+      }
+    }
+    const forcedAgentId = typeof forcedAgent === "string" ? forcedAgent : undefined;
+    const forcedAgentUsed = Boolean(forcedAgentId);
 
     if (useStream) {
       const encoder = new TextEncoder();
 
-      const agentId = agentManager.routeToAgent(message);
+      const agentId = forcedAgentId || agentManager.routeToAgent(message);
       const agent = agentId ? agentManager.getAgent(agentId) : null;
 
       const readable = new ReadableStream({
@@ -30,13 +49,14 @@ export async function POST(request: NextRequest) {
             if (agent) {
               controller.enqueue(
                 encoder.encode(
-                  `data: ${JSON.stringify({ agentUsed: agent.name })}\n\n`
+                  `data: ${JSON.stringify({ agentUsed: agent.name, forcedAgentUsed })}\n\n`
                 )
               );
             }
             for await (const chunk of agentManager.streamMessage(
               message,
-              conversationHistory
+              conversationHistory,
+              forcedAgentId
             )) {
               controller.enqueue(
                 encoder.encode(
@@ -71,12 +91,14 @@ export async function POST(request: NextRequest) {
 
     const response = await agentManager.processMessage(
       message,
-      conversationHistory
+      conversationHistory,
+      forcedAgentId
     );
 
     return NextResponse.json({
       content: response.content,
       agentUsed: response.agentUsed,
+      forcedAgentUsed,
       metadata: response.metadata,
     });
   } catch (error) {

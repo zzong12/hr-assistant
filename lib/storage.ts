@@ -17,22 +17,46 @@ const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "hr-assistant.db");
 
 let dbInstance: Database.Database | null = null;
+let dbInitError: Error | null = null;
+let dbErrorLogged = false;
+const SQLITE_BINARY_FIX_HINT =
+  "better-sqlite3 与当前 Node.js ABI 不匹配。请在项目根目录执行：`npm rebuild better-sqlite3`（如仍失败执行 `rm -rf node_modules package-lock.json && npm install`），然后重启开发服务。";
+
+export function getStorageInitErrorMessage(): string | null {
+  return dbInitError?.message || null;
+}
 
 function getDb(): Database.Database {
   if (dbInstance) return dbInstance;
+  if (dbInitError) throw dbInitError;
 
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 
-  dbInstance = new Database(DB_PATH);
-  dbInstance.pragma("journal_mode = WAL");
-  dbInstance.pragma("foreign_keys = ON");
+  try {
+    dbInstance = new Database(DB_PATH);
+    dbInstance.pragma("journal_mode = WAL");
+    dbInstance.pragma("foreign_keys = ON");
 
-  initializeTables(dbInstance);
-  migrateFromFiles(dbInstance);
+    initializeTables(dbInstance);
+    migrateFromFiles(dbInstance);
 
-  return dbInstance;
+    return dbInstance;
+  } catch (error) {
+    const rawError = error instanceof Error ? error : new Error(String(error));
+    const isAbiMismatch =
+      rawError.message.includes("NODE_MODULE_VERSION") ||
+      (rawError as NodeJS.ErrnoException).code === "ERR_DLOPEN_FAILED";
+    dbInitError = isAbiMismatch
+      ? new Error(`${SQLITE_BINARY_FIX_HINT}\n原始错误: ${rawError.message}`)
+      : rawError;
+    if (!dbErrorLogged) {
+      dbErrorLogged = true;
+      console.error("Database initialization failed:", dbInitError.message);
+    }
+    throw dbInitError;
+  }
 }
 
 function initializeTables(db: Database.Database): void {
@@ -143,6 +167,13 @@ function initializeTables(db: Database.Database): void {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
+    ON conversations(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_conversations_favorite_updated
+    ON conversations(favorite, updated_at DESC);
   `);
 
   // Migrate: add columns that may be missing from older schema versions
@@ -583,7 +614,9 @@ export function loadJob(jobId: string): Job | null {
     const row = db.prepare("SELECT * FROM jobs WHERE id = ?").get(jobId);
     return row ? rowToJob(row) : null;
   } catch (error) {
-    console.error("Error loading job:", error);
+    if (!dbInitError) {
+      console.error("Error loading job:", error);
+    }
     return null;
   }
 }
@@ -594,7 +627,9 @@ export function loadAllJobs(): Job[] {
     const rows = db.prepare("SELECT * FROM jobs ORDER BY created_at DESC").all();
     return rows.map(rowToJob);
   } catch (error) {
-    console.error("Error loading jobs:", error);
+    if (!dbInitError) {
+      console.error("Error loading jobs:", error);
+    }
     return [];
   }
 }
@@ -655,7 +690,9 @@ export function loadCandidate(candidateId: string): Candidate | null {
     const row = db.prepare("SELECT * FROM candidates WHERE id = ?").get(candidateId);
     return row ? rowToCandidate(row) : null;
   } catch (error) {
-    console.error("Error loading candidate:", error);
+    if (!dbInitError) {
+      console.error("Error loading candidate:", error);
+    }
     return null;
   }
 }
@@ -666,7 +703,9 @@ export function loadAllCandidates(): Candidate[] {
     const rows = db.prepare("SELECT * FROM candidates ORDER BY created_at DESC").all();
     return rows.map(rowToCandidate);
   } catch (error) {
-    console.error("Error loading candidates:", error);
+    if (!dbInitError) {
+      console.error("Error loading candidates:", error);
+    }
     return [];
   }
 }
@@ -822,7 +861,9 @@ export function loadAllConversations(): Conversation[] {
     const rows = db.prepare("SELECT * FROM conversations ORDER BY updated_at DESC").all();
     return rows.map(rowToConversation);
   } catch (error) {
-    console.error("Error loading conversations:", error);
+    if (!dbInitError) {
+      console.error("Error loading conversations:", error);
+    }
     return [];
   }
 }
@@ -836,6 +877,46 @@ export function deleteConversation(conversationId: string): boolean {
     console.error("Error deleting conversation:", error);
     return false;
   }
+}
+
+export function saveConversationsBatch(conversations: Conversation[]): { saved: number; failed: number } {
+  if (conversations.length === 0) return { saved: 0, failed: 0 };
+
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO conversations (id, title, messages, context, archived, favorite, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title=excluded.title, messages=excluded.messages, context=excluded.context,
+      archived=excluded.archived, favorite=excluded.favorite, updated_at=excluded.updated_at
+  `);
+
+  let saved = 0;
+  let failed = 0;
+  const now = new Date().toISOString();
+
+  const tx = db.transaction((items: Conversation[]) => {
+    for (const conversation of items) {
+      try {
+        stmt.run(
+          conversation.id,
+          conversation.title || "",
+          JSON.stringify(conversation.messages || []),
+          conversation.context ? JSON.stringify(conversation.context) : null,
+          conversation.archived ? 1 : 0,
+          conversation.favorite ? 1 : 0,
+          new Date(conversation.createdAt || now).toISOString(),
+          conversation.updatedAt ? new Date(conversation.updatedAt).toISOString() : now
+        );
+        saved += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+  });
+
+  tx(conversations);
+  return { saved, failed };
 }
 
 // ==================== Template Storage ====================
@@ -1124,8 +1205,7 @@ export function loadSetting(key: string): string | null {
     const db = getDb();
     const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as any;
     return row?.value || null;
-  } catch (error) {
-    console.error("Error loading setting:", error);
+  } catch {
     return null;
   }
 }
@@ -1137,8 +1217,80 @@ export function loadAllSettings(): Record<string, string> {
     const result: Record<string, string> = {};
     for (const row of rows) result[row.key] = row.value;
     return result;
-  } catch (error) {
-    console.error("Error loading settings:", error);
+  } catch {
     return {};
+  }
+}
+
+// ==================== UI Preferences & Migration Flags ====================
+
+const PREF_CURRENT_MODULE_KEY = "preferences.currentModule";
+const PREF_SIDEBAR_COLLAPSED_KEY = "preferences.isSidebarCollapsed";
+const MIGRATION_LS_TO_DB_DONE_KEY = "migration.localStorageToDb.v1";
+
+export function saveUIPreferences(preferences: {
+  currentModule?: string;
+  isSidebarCollapsed?: boolean;
+}): boolean {
+  try {
+    const db = getDb();
+    const stmt = db.prepare(
+      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+    );
+    const tx = db.transaction(() => {
+      if (preferences.currentModule) {
+        stmt.run(PREF_CURRENT_MODULE_KEY, preferences.currentModule);
+      }
+      if (typeof preferences.isSidebarCollapsed === "boolean") {
+        stmt.run(PREF_SIDEBAR_COLLAPSED_KEY, String(preferences.isSidebarCollapsed));
+      }
+    });
+    tx();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function loadUIPreferences(): {
+  currentModule: string;
+  isSidebarCollapsed: boolean;
+} {
+  const currentModule = loadSetting(PREF_CURRENT_MODULE_KEY) || "chat";
+  const sidebarRaw = loadSetting(PREF_SIDEBAR_COLLAPSED_KEY);
+  return {
+    currentModule,
+    isSidebarCollapsed: sidebarRaw === "true",
+  };
+}
+
+export function isLocalStorageMigrationDone(): boolean {
+  const value = loadSetting(MIGRATION_LS_TO_DB_DONE_KEY);
+  if (!value) return false;
+  if (value === "done") return true;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed?.status === "done";
+  } catch {
+    return false;
+  }
+}
+
+export function markLocalStorageMigrationDone(payload?: {
+  migratedConversations?: number;
+  timestamp?: string;
+}): boolean {
+  try {
+    const value = payload
+      ? JSON.stringify({
+          status: "done",
+          migratedConversations: payload.migratedConversations ?? 0,
+          timestamp: payload.timestamp || new Date().toISOString(),
+        })
+      : "done";
+
+    return saveSetting(MIGRATION_LS_TO_DB_DONE_KEY, value);
+  } catch {
+    return false;
   }
 }

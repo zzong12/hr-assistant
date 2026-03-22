@@ -35,6 +35,7 @@ const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; te
 };
 
 export default function JobsPage() {
+  const [mounted, setMounted] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,7 +86,18 @@ export default function JobsPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadJobs(); }, []);
+  useEffect(() => {
+    setMounted(true);
+    void loadJobs();
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   const handleDelete = async (id?: string) => {
     if (id) {

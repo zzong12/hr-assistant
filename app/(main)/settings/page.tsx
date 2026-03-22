@@ -11,6 +11,7 @@ import {
   Database, Download, Trash2, Info, Loader2, Bell, Send, MessageSquare, Settings2, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getPublicEnvConfig } from "@/lib/env";
 
 declare global {
   interface Window {
@@ -34,6 +35,7 @@ interface DataStats {
 }
 
 export default function SettingsPage() {
+  const { appVersion } = getPublicEnvConfig();
   const [exporting, setExporting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [stats, setStats] = useState<DataStats>({ jobs: 0, candidates: 0, interviews: 0, conversations: 0, templates: 0 });
@@ -221,7 +223,6 @@ export default function SettingsPage() {
         body: JSON.stringify({ action: "clear" }),
       });
       if (!res.ok) throw new Error("清除服务端数据失败");
-      localStorage.removeItem("hr-assistant-storage");
       toast.success("数据已清除");
       window.location.reload();
     } catch { toast.error("清除失败"); }
@@ -461,10 +462,10 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-4 text-sm bg-muted/20 p-5 rounded-2xl border border-border/40">
               <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">应用名称</span><span className="font-semibold">Nexus HR</span></div>
-              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">版本</span><span className="font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs">v2.0.0</span></div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">版本</span><span className="font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-md text-xs">v{appVersion}</span></div>
               <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">技术栈</span><span className="font-semibold">Next.js + Claude AI</span></div>
               <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">AI引擎</span><span className="font-semibold">Claude Sonnet</span></div>
-              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">数据存储</span><span className="font-semibold">SQLite + LocalStorage</span></div>
+              <div className="flex justify-between items-center py-1 border-b border-border/40 last:border-0"><span className="text-muted-foreground font-medium">数据存储</span><span className="font-semibold">SQLite</span></div>
               <div className="flex justify-between items-center py-1"><span className="text-muted-foreground font-medium">通知渠道</span><span className="font-semibold">飞书机器人</span></div>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed mt-6 text-center">

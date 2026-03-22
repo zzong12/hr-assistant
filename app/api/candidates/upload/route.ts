@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateId, saveCandidate, saveRawResumeText } from "@/lib/storage";
 import { parseResume } from "@/lib/resume-utils";
+import { extractResumeText } from "@/lib/resume-file-parser";
 import type { Candidate } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -17,28 +18,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    let text = "";
-    const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "text";
+    const ext = file.name.toLowerCase().split(".").pop() || "";
+    const allowed = new Set(["pdf", "doc", "docx", "txt"]);
+    if (!allowed.has(ext)) {
+      return NextResponse.json(
+        { error: "仅支持 PDF、DOC、DOCX、TXT 格式" },
+        { status: 400 }
+      );
+    }
 
-    if (fileType === "pdf") {
-      try {
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const pdfParseModule = await import("pdf-parse") as any;
-        const pdfParse = pdfParseModule.PDFParse || pdfParseModule.default || pdfParseModule;
-        if (typeof pdfParse !== "function") {
-          throw new Error(`pdf-parse module did not export a callable function. Exports: ${Object.keys(pdfParseModule).join(", ")}`);
-        }
-        const pdfData = await pdfParse(buffer);
-        text = pdfData.text;
-      } catch (err) {
-        console.error("PDF parse error:", err);
-        return NextResponse.json(
-          { error: "Failed to parse PDF file" },
-          { status: 400 }
-        );
-      }
-    } else {
-      text = await file.text();
+    let text = "";
+    let fileType: "pdf" | "text" | "docx" = "text";
+    try {
+      const fileBuffer = Buffer.from(await file.arrayBuffer());
+      const extracted = await extractResumeText(file.name, fileBuffer);
+      text = extracted.text;
+      fileType = extracted.type === "pdf" ? "pdf" : extracted.type === "docx" || extracted.type === "doc" ? "docx" : "text";
+    } catch (err) {
+      console.error("Resume parse error:", err);
+      return NextResponse.json(
+        { error: "文件解析失败，请上传 PDF、DOCX 或 DOC 格式" },
+        { status: 400 }
+      );
     }
 
     if (!text.trim()) {

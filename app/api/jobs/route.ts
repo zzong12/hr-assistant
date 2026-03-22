@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateId, saveJob, loadAllJobs, loadJob, deleteJob } from "@/lib/storage";
+import { generateId, saveJob, loadAllJobs, loadJob, deleteJob, getStorageInitErrorMessage } from "@/lib/storage";
 import type { Job } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -82,8 +82,9 @@ export async function POST(request: NextRequest) {
     // Save job
     const saved = saveJob(job);
     if (!saved) {
+      const storageError = getStorageInitErrorMessage();
       return NextResponse.json(
-        { error: "Failed to save job" },
+        { error: storageError || "Failed to save job" },
         { status: 500 }
       );
     }
@@ -131,8 +132,9 @@ export async function PUT(request: NextRequest) {
     // Save updated job
     const saved = saveJob(updatedJob);
     if (!saved) {
+      const storageError = getStorageInitErrorMessage();
       return NextResponse.json(
-        { error: "Failed to update job" },
+        { error: storageError || "Failed to update job" },
         { status: 500 }
       );
     }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { replyFeishuCard, replyFeishuMessage, downloadFeishuFile, isFeishuConfigured } from "@/lib/feishu";
 import { getAgentManager } from "@/lib/agents";
 import { loadSetting, generateId, saveCandidate, saveRawResumeText } from "@/lib/storage";
+import { extractResumeText } from "@/lib/resume-file-parser";
 import type { Candidate } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -87,9 +88,14 @@ async function handleFeishuMessage(messageId: string, messageType: string, messa
         const content = JSON.parse(message.content);
         const fileKey = content.file_key;
         const fileName = content.file_name || "resume.pdf";
+        const ext = fileName.toLowerCase().split(".").pop() || "";
 
         if (!fileKey) {
           await replyFeishuMessage(messageId, "无法读取文件，请重新发送");
+          return;
+        }
+        if (!["pdf", "doc", "docx", "txt"].includes(ext)) {
+          await replyFeishuMessage(messageId, "暂仅支持 PDF、DOC、DOCX、TXT 简历文件");
           return;
         }
 
@@ -101,15 +107,8 @@ async function handleFeishuMessage(messageId: string, messageType: string, messa
 
         await replyFeishuMessage(messageId, `正在分析简历: ${fileName}...`);
 
-        let text = "";
-        if (fileName.toLowerCase().endsWith(".pdf")) {
-          const pdfParseModule = await import("pdf-parse");
-          const pdfParse = (pdfParseModule as any).default || pdfParseModule;
-          const pdfData = await pdfParse(fileBuffer);
-          text = pdfData.text;
-        } else {
-          text = fileBuffer.toString("utf-8");
-        }
+        const extracted = await extractResumeText(fileName, fileBuffer);
+        const text = extracted.text;
 
         if (!text.trim()) {
           await replyFeishuMessage(messageId, "无法从文件中提取文本内容");
@@ -118,7 +117,7 @@ async function handleFeishuMessage(messageId: string, messageType: string, messa
 
         // Create candidate with AI analysis
         const { parseResume } = await import("@/lib/resume-utils");
-        const parsedData = await parseResume(fileName, text, fileName.endsWith(".pdf") ? "pdf" : "text");
+        const parsedData = await parseResume(fileName, text, extracted.type === "pdf" ? "pdf" : "docx");
 
         const candidate: Candidate = {
           id: generateId(),
@@ -169,7 +168,7 @@ async function handleFeishuMessage(messageId: string, messageType: string, messa
         return;
       }
     } else {
-      await replyFeishuMessage(messageId, "目前支持文本消息和文件（简历PDF），其他消息类型暂不支持");
+      await replyFeishuMessage(messageId, "目前支持文本消息和文件（简历 PDF/Word），其他消息类型暂不支持");
       return;
     }
 

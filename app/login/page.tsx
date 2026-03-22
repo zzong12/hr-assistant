@@ -47,19 +47,18 @@ function LoginForm() {
       {/* Brand */}
       <div className="text-center mb-8">
         <div className="relative w-20 h-20 mx-auto mb-6">
-          <div className="absolute inset-0 gradient-primary rounded-2xl blur-[10px] opacity-50 animate-glow-pulse" />
-          <div className="relative w-full h-full rounded-2xl gradient-primary flex items-center justify-center border border-white/20 shadow-2xl animate-float">
+          <div className="relative w-full h-full rounded-2xl gradient-primary flex items-center justify-center border border-white/10 shadow-lg">
             <NexusLogo className="w-10 h-10 text-white" />
           </div>
         </div>
-        <h1 className="text-3xl font-black tracking-tight gradient-text">Nexus HR</h1>
-        <p className="text-sm text-muted-foreground mt-2">AI 招聘工作台</p>
+        <h1 className="text-3xl font-bold tracking-tight text-text-primary">Nexus HR</h1>
+        <p className="text-sm text-text-tertiary mt-2">AI 招聘工作台</p>
       </div>
 
       {/* Login Card */}
       <form
         onSubmit={handleSubmit}
-        className="glass-panel rounded-2xl p-8 shadow-2xl space-y-6"
+        className="glass-panel rounded-2xl p-8 space-y-6"
       >
         {error && (
           <div className="bg-destructive/10 text-destructive text-sm px-4 py-3 rounded-xl border border-destructive/20 animate-fade-in">
@@ -81,7 +80,7 @@ function LoginForm() {
               placeholder="请输入用户名"
               autoFocus
               required
-              className="w-full h-11 rounded-xl border border-input bg-background/50 pl-10 pr-4 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground/60"
+            className="w-full h-11 rounded-xl border border-input bg-background/70 pl-10 pr-4 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -99,7 +98,7 @@ function LoginForm() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="请输入密码"
               required
-              className="w-full h-11 rounded-xl border border-input bg-background/50 pl-10 pr-4 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground/60"
+            className="w-full h-11 rounded-xl border border-input bg-background/70 pl-10 pr-4 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -107,7 +106,7 @@ function LoginForm() {
         <button
           type="submit"
           disabled={loading || !username || !password}
-          className="w-full h-11 rounded-xl gradient-primary text-white font-semibold text-sm shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+          className="w-full h-11 rounded-xl gradient-primary text-white font-semibold text-sm transition-colors duration-200 disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
         >
           {loading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -139,8 +138,8 @@ export default function LoginPage() {
       {showDragBar && (
         <div className="fixed top-0 left-0 right-0 h-12 z-50 electron-drag-region" />
       )}
-      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-primary/10 blur-[120px]" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] rounded-full bg-primary/5 blur-[100px]" />
+      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-primary/8 blur-[120px]" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] rounded-full bg-primary/6 blur-[100px]" />
 
       <Suspense fallback={
         <div className="relative z-10 w-full max-w-sm mx-4 text-center">

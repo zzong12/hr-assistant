@@ -1,78 +1,82 @@
 # Nexus HR
 
-基于 AI 多 Agent 架构的智能 HR 招聘工作台，定位为 **HR 数字员工**——通过自然语言对话驱动招聘全流程，支持飞书双向通信，可作为后台长期运行的智能服务。
+基于 AI 多 Agent 架构的智能招聘工作台，定位为 **HR 数字员工**：通过自然语言对话驱动职位发布、简历筛选、面试安排与反馈沉淀的完整流程。
 
-## 项目简介
+## 项目定位
 
-Nexus HR 将传统的表单驱动型 HR 系统升级为 **对话式 AI 工作台**。HR 只需通过聊天、拖拽简历、粘贴链接等自然交互方式，即可完成职位发布、简历筛选、面试安排和候选人评估的完整闭环。
+Nexus HR 不是传统表单系统，而是对话优先的招聘操作系统：
 
-核心设计原则：
+- 对话驱动：输入自然语言即可触发业务操作。
+- AI 深度参与：JD 生成、简历分析、匹配评估、面试题与反馈均由 AI 参与。
+- 业务闭环：从职位到候选人到面试到复盘，数据统一沉淀到 SQLite。
+- 可部署运行：支持本地开发、Docker 部署、远程长期运行。
 
-- **对话优先**：所有操作均可通过自然语言完成，减少表单填写
-- **AI 深度参与**：简历解析、岗位匹配、面试题生成、反馈分析全部由 AI 驱动
-- **双面分析**：所有评估同时输出正面（优势）和反面（风险）分析
-- **主动服务**：后台任务处理完成后通过飞书主动通知
+## 功能亮点
 
-### 功能全景
+### 当前版本与核心能力
 
-| 模块 | 功能 |
-|------|------|
-| 智能对话 | 自然语言交互、AI 自动识别意图并执行操作（创建职位/分析简历/安排面试） |
-| 职位管理 | 自由文本/URL 抓取生成 JD、AI 智能补全、BOSS 直聘等平台链接解析 |
-| 候选人管理 | 拖拽上传简历（PDF/TXT）、粘贴文本 AI 解析、一键匹配全部职位、评分筛选 |
-| 面试管理 | AI 生成面试题（含关键点分级）、语音实时转录+AI 助手、自定义评估维度 |
-| 飞书集成 | 双向通信——在飞书中发消息/简历即可触发 AI 处理，结果自动回复 |
-| 数据看板 | 活跃职位、候选人统计、今日面试、待处理任务一览 |
+- 当前版本：`v2.1.0`
+- 核心能力：
+  - 首页 Chat 支持英文 `/command`（如 `/jd`、`/resume`、`/interview`）指定 Agent。
+  - 候选人精准匹配支持“多候选人 × 多职位”批量任务。
+  - 对话与偏好数据以数据库为准（DB SoT）。
+  - 全站文本录入支持语音输入（浏览器支持时）。
 
-## 技术栈
+### 业务模块
 
-### 前端
+- 智能对话：意图识别、Agent 路由、操作执行。
+- 职位管理：自由文本/链接生成 JD、规则化评分参考。
+- 候选人管理：简历上传解析、AI 分析、岗位匹配与状态流转。
+- 面试管理：面试安排、题库生成、语音辅助、反馈沉淀。
+- 历史与设置：会话资产管理、系统配置、飞书集成。
 
-| 技术 | 用途 |
-|------|------|
-| Next.js 16 (App Router) | 全栈框架，SSR + API Routes |
-| React 19 | UI 渲染 |
-| TypeScript 5 | 类型安全 |
-| Tailwind CSS 4 | 样式方案 |
-| shadcn/ui (Radix) | 组件库 |
-| Zustand | 轻量状态管理 |
-| Lucide React | 图标库 |
+## 界面预览
 
-### 后端
+### 对话入口
 
-| 技术 | 用途 |
-|------|------|
-| Next.js API Routes | RESTful 接口 |
-| Anthropic Claude SDK | AI 多 Agent 系统 |
-| better-sqlite3 | 嵌入式数据库 |
-| pdf-parse | PDF 简历解析 |
-| cheerio | URL 页面抓取解析 |
-| @larksuiteoapi/node-sdk | 飞书双向通信 |
+![首页对话](/docs/screenshot/main-chat.png)
 
-### 架构
+首页负责统一入口：自然语言交互、指令调用、文档上传与任务回显。
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                      客户端 (React)                       │
-│  ChatInterface │ JobsPage │ CandidatesPage │ Interviews  │
-└────────┬─────────────────────────────────────────────────┘
-         │
-         ▼
-┌──────────────────────────────────────────────────────────┐
-│                   Next.js API Routes                      │
-│  /api/chat │ /api/jobs │ /api/candidates │ /api/interviews│
-└────────┬──────────────┬──────────────────────────────────┘
-         │              │
-         ▼              ▼
-┌─────────────┐  ┌──────────────┐  ┌─────────────────────┐
-│ AI Agents   │  │ SQLite (DB)  │  │ 飞书 Webhook/API    │
-│ ├ Concierge │  │ jobs         │  │ 双向消息            │
-│ ├ JD 生成   │  │ candidates   │  │ 文件接收            │
-│ ├ 简历筛选  │  │ interviews   │  │ 卡片回复            │
-│ ├ 面试协调  │  │ conversations│  └─────────────────────┘
-│ └ 沟通专员  │  │ settings     │
-└─────────────┘  └──────────────┘
-```
+### 职位管理
+
+![职位主页面](/docs/screenshot/jobs-main.png)
+
+职位模块支持职位全生命周期维护，集中管理 JD 与评分规则。
+
+![职位匹配与评估](/docs/screenshot/jobs-match.png)
+
+可在职位维度查看候选人匹配结果、评分细项与分析理由。
+
+### 候选人与简历
+
+![候选人与简历详情](/docs/screenshot/resume-view.png)
+
+候选人页面支持简历解析、信息编辑、标签化筛选与状态流转。
+
+![简历匹配与面试衔接](/docs/screenshot/resume-interview.png)
+
+可从候选人直接进入匹配与面试协同，减少跨页面切换。
+
+### 评分与历史
+
+![评分规则管理](/docs/screenshot/scoring-split.png)
+
+评分规则支持维度化拆分，便于团队统一评估标准。
+
+![历史记录列表](/docs/screenshot/history.png)
+
+历史页用于沉淀会话与操作轨迹，支持检索与管理。
+
+![历史对话详情](/docs/screenshot/history-chat.png)
+
+单会话可查看完整上下文，便于复盘与知识再利用。
+
+### 设置页
+
+![系统设置](/docs/screenshot/setting.png)
+
+设置页包含通知、集成与运行参数，支持生产环境运维配置。
 
 ## 快速开始
 
@@ -80,69 +84,36 @@ Nexus HR 将传统的表单驱动型 HR 系统升级为 **对话式 AI 工作台
 
 - Node.js >= 22
 - npm >= 9
-- Anthropic API Key（或兼容接口）
+- 可用的 Anthropic API Key（或兼容接口）
 
-### 本地开发
+### 最短路径
 
 ```bash
-# 安装依赖
+# 1) 安装依赖
 npm install
 
-# 配置环境变量
+# 2) 配置环境变量
 cp .env.local.example .env.local
-# 编辑 .env.local，填入 API Key
+# 编辑 .env.local，至少填入 ANTHROPIC_API_KEY
 
-# 启动开发服务器
+# 3) 启动开发环境
 npm run dev
 
-# 访问 http://localhost:3000
+# 4) 访问
+# http://localhost:3000
 ```
 
-### 环境变量
+## Docker 部署
 
-在 `.env.local` 中配置：
-
-```bash
-# 必填 - AI 服务
-ANTHROPIC_API_KEY=your_api_key
-ANTHROPIC_BASE_URL=https://api.anthropic.com    # 或兼容接口地址
-DEFAULT_CLAUDE_MODEL=claude-3-5-sonnet-20241022
-
-# 可选 - 飞书集成
-FEISHU_APP_ID=your_app_id
-FEISHU_APP_SECRET=your_app_secret
-FEISHU_WEBHOOK_URL=https://open.feishu.cn/...
-
-# 可选 - 应用配置
-PORT=3000
-DATA_DIR=./data
-MAX_TOKENS=4096
-```
-
-完整配置说明见 [docs/ENV_CONFIGURATION.md](docs/ENV_CONFIGURATION.md)。
-
-## 部署
-
-### Docker Compose 部署（推荐）
-
-项目提供 Docker 镜像和 docker-compose 配置，一键部署：
+### docker-compose（推荐）
 
 ```bash
-# 1. 准备目录
-mkdir -p hr-assistant/data && cd hr-assistant
-
-# 2. 下载配置文件
-# 将 docker-compose.yml 和 .env.local 放到当前目录
-
-# 3. 启动
 docker-compose up -d
-
-# 4. 查看状态
 docker-compose ps
 docker-compose logs -f
 ```
 
-`docker-compose.yml` 内容：
+示例 `docker-compose.yml`：
 
 ```yaml
 services:
@@ -161,145 +132,99 @@ services:
       - ./data:/app/data
 ```
 
-### 本地构建镜像
-
-```bash
-# 构建（在项目根目录）
-docker build -t hr-assistant .
-
-# 推送到阿里云（可选）
-docker tag hr-assistant registry.cn-hangzhou.aliyuncs.com/openz/hr-assistant:latest
-docker push registry.cn-hangzhou.aliyuncs.com/openz/hr-assistant:latest
-```
-
-### 一键部署脚本
-
-```bash
-# 构建 → 推送 → 上传数据 → 远程启动
-bash scripts/deploy.sh
-```
-
-脚本自动执行：构建 amd64 镜像 → 推送至阿里云 Registry → SCP 上传配置和数据 → SSH 远程拉取并启动。
-
 ### 数据持久化
 
-所有数据存储在 `./data/` 目录：
-
-```
+```text
 data/
-├── hr-assistant.db      # SQLite 主数据库
-├── hr-assistant.db-wal  # WAL 日志
-├── hr-assistant.db-shm  # 共享内存
-└── resumes/             # 上传的简历文件
+├── hr-assistant.db
+├── hr-assistant.db-wal
+├── hr-assistant.db-shm
+└── resumes/
 ```
 
-备份只需复制整个 `data/` 目录。迁移时将该目录放到新环境的同一路径下即可。
+迁移或备份时，直接复制整个 `data/` 目录即可。
 
-## API 接口
+## 配置说明
 
-### 对话
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/chat` | 发送消息（流式响应） |
-
-### 职位
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/jobs` | 职位列表 |
-| POST | `/api/jobs` | 创建职位 |
-| PUT | `/api/jobs` | 更新职位 |
-| DELETE | `/api/jobs?id=xxx` | 删除职位 |
-| POST | `/api/jobs/generate` | AI 生成 JD（支持 URL/自由文本） |
-
-### 候选人
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/candidates` | 候选人列表 |
-| POST | `/api/candidates` | 创建候选人 |
-| POST | `/api/candidates/upload` | 上传简历（multipart） |
-| POST | `/api/candidates/[id]/analyze` | AI 简历分析 |
-| POST | `/api/candidates/[id]/match` | 匹配指定职位 |
-| POST | `/api/candidates/[id]/match-all` | 一键匹配所有活跃职位 |
-
-### 面试
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/interviews` | 面试列表 |
-| POST | `/api/interviews` | 创建面试 |
-| POST | `/api/interviews/[id]/generate-questions` | AI 生成面试题（含关键点分级） |
-| POST | `/api/interviews/[id]/feedback` | 提交反馈（支持 AI 自由文本模式） |
-| POST | `/api/interviews/[id]/voice-assist` | 语音转录 AI 分析 |
-
-### 其他
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET/POST | `/api/settings` | 应用设置 |
-| POST | `/api/feishu/webhook` | 飞书事件回调 |
-| GET/POST | `/api/data` | 数据管理（统计/导出/清空） |
-
-## AI Agent 系统
-
-系统包含 5 个专业 Agent，由主控 Agent 根据用户意图自动路由：
-
-| Agent | 职责 |
-|-------|------|
-| HR Concierge | 意图识别、任务路由、数据查询、操作执行 |
-| JD 生成专员 | 职位描述撰写、优化、市场化薪资建议 |
-| 简历筛选专员 | 简历解析、技能提取、匹配度评估（正反双面分析） |
-| 面试协调专员 | 面试流程设计、题目生成（含关键点+等级）、评估（正反双面分析） |
-| 候选人沟通专员 | 面试邀约、反馈通知、Offer 沟通、薪资谈判话术 |
-
-## 项目结构
-
-```
-├── app/
-│   ├── (main)/              # 主布局路由组
-│   │   ├── page.tsx         # 首页（对话 + 数据面板）
-│   │   ├── jobs/            # 职位管理
-│   │   ├── candidates/      # 候选人管理
-│   │   ├── interviews/      # 面试管理
-│   │   ├── history/         # 历史记录
-│   │   └── settings/        # 设置
-│   ├── api/                 # API 路由
-│   ├── layout.tsx           # 根布局
-│   └── globals.css          # 全局样式
-├── components/
-│   ├── ChatInterface.tsx    # 聊天界面
-│   ├── Sidebar.tsx          # 侧边导航
-│   ├── InfoPanel.tsx        # 数据面板
-│   ├── VoiceAssistant.tsx   # 语音识别助手
-│   └── ui/                  # shadcn/ui 组件
-├── lib/
-│   ├── agents.ts            # AI Agent 定义和管理
-│   ├── storage.ts           # SQLite 数据库操作
-│   ├── types.ts             # TypeScript 类型定义
-│   ├── feishu.ts            # 飞书 SDK 封装
-│   ├── notify.ts            # 通知服务
-│   └── *-utils.ts           # 各类工具函数
-├── store/
-│   └── useStore.ts          # Zustand 全局状态
-├── scripts/
-│   ├── deploy.sh            # 一键部署脚本
-│   └── check-env.js         # 环境变量检查
-├── Dockerfile               # 多阶段构建
-├── docker-compose.yml       # 容器编排
-└── data/                    # 数据目录（git ignored）
-```
-
-## 可用脚本
+`.env.local` 常用配置：
 
 ```bash
-npm run dev        # 启动开发服务器
-npm run build      # 生产构建
-npm start          # 启动生产服务
-npm run typecheck  # TypeScript 类型检查
-npm run lint       # ESLint 代码检查
+# AI
+ANTHROPIC_API_KEY=your_api_key
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+DEFAULT_CLAUDE_MODEL=claude-3-5-sonnet-20241022
+
+# App
+PORT=3000
+DATA_DIR=./data
+MAX_TOKENS=4096
+
+# Feishu (可选)
+FEISHU_APP_ID=your_app_id
+FEISHU_APP_SECRET=your_app_secret
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/...
 ```
+
+## API 概览
+
+### 高频接口
+
+- `POST /api/chat`：聊天请求（支持流式与 `forcedAgent`）
+- `GET/POST/PUT/DELETE /api/jobs`：职位管理
+- `GET/POST/PUT/DELETE /api/candidates`：候选人管理
+- `POST /api/candidates/upload`：上传简历
+- `POST /api/interviews`：创建面试
+
+### 低频接口索引
+
+- `/api/jobs/generate`
+- `/api/jobs/scoring-rule`
+- `/api/candidates/[id]/analyze`
+- `/api/candidates/[id]/match`
+- `/api/candidates/[id]/match-all`
+- `/api/candidates/match-batch`
+- `/api/interviews/[id]/generate-questions`
+- `/api/interviews/[id]/feedback`
+- `/api/interviews/[id]/voice-assist`
+- `/api/conversations`
+- `/api/preferences`
+- `/api/settings`
+- `/api/feishu/webhook`
+
+## 架构与目录
+
+### 技术栈
+
+- 前端：Next.js 16、React 19、TypeScript 5、Tailwind CSS 4、shadcn/ui、Zustand
+- 后端：Next.js API Routes、Anthropic SDK、better-sqlite3
+- 解析能力：PDF/Word/TXT 简历解析
+- 集成：飞书通知与双向通信
+
+### 项目目录
+
+```text
+app/           # 页面与 API 路由
+components/    # 业务组件与 UI 组件
+lib/           # Agent、存储、业务工具
+store/         # 前端状态管理
+docs/          # 部署与配置文档、截图
+scripts/       # 自动化脚本
+```
+
+## 常用命令
+
+```bash
+npm run dev        # 开发
+npm run build      # 生产构建
+npm start          # 生产启动
+npm run typecheck  # 类型检查
+npm run lint       # 代码检查
+```
+
+## 更多文档
+
+- [部署文档](docs/DEPLOYMENT.md)
+- [环境配置文档](docs/ENV_CONFIGURATION.md)
 
 ## License
 

@@ -247,6 +247,7 @@ export interface Message {
 
 export interface MessageMetadata {
   agentUsed?: string;
+  forcedAgentUsed?: boolean;
   toolsCalled?: string[];
   contextId?: string;
 }

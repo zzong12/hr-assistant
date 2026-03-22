@@ -1,19 +1,19 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
 import {
   Send, Loader2, AlertCircle, Sparkles, Upload,
-  Briefcase, User, Calendar, CheckCircle2, FileText,
+  Briefcase, User, Calendar, CheckCircle2, FileText, Mic, MicOff,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useStore } from "@/store/useStore";
 import { toast } from "sonner";
 import { NexusLogo } from "@/components/NexusLogo";
 import type { Message, Conversation, ChatAction } from "@/lib/types";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 
 const WELCOME_MESSAGE: Message = {
   id: "welcome",
@@ -21,6 +21,44 @@ const WELCOME_MESSAGE: Message = {
   content: "__WELCOME__",
   timestamp: new Date(),
 };
+
+type SlashCommandKey = "ai" | "jd" | "resume" | "interview" | "comm" | "score" | "help";
+type ForcedAgentId =
+  | "concierge"
+  | "jd_generator"
+  | "resume_screener"
+  | "interview_coordinator"
+  | "communication_specialist"
+  | "scoring_rule_generator";
+
+interface SlashCommandDef {
+  key: SlashCommandKey;
+  forcedAgent?: ForcedAgentId;
+  title: string;
+  description: string;
+  placeholder: string;
+}
+
+const SLASH_COMMANDS: SlashCommandDef[] = [
+  { key: "ai", forcedAgent: "concierge", title: "通用助手", description: "主控 Agent，处理综合任务", placeholder: "<ask anything>" },
+  { key: "jd", forcedAgent: "jd_generator", title: "JD 专员", description: "生成/优化职位描述", placeholder: "<job request>" },
+  { key: "resume", forcedAgent: "resume_screener", title: "简历专员", description: "筛选候选人、简历分析", placeholder: "<resume task>" },
+  { key: "interview", forcedAgent: "interview_coordinator", title: "面试专员", description: "面试安排与题目生成", placeholder: "<interview task>" },
+  { key: "comm", forcedAgent: "communication_specialist", title: "沟通专员", description: "候选人沟通话术", placeholder: "<communication task>" },
+  { key: "score", forcedAgent: "scoring_rule_generator", title: "评分专员", description: "生成岗位评分规则", placeholder: "<scoring task>" },
+  { key: "help", title: "帮助", description: "查看全部可用指令", placeholder: "" },
+];
+
+const SLASH_COMMAND_MAP = new Map(SLASH_COMMANDS.map((item) => [item.key, item]));
+
+function parseSlashInput(input: string): { command: string; payload: string } | null {
+  const match = input.match(/^\/([a-zA-Z]+)(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  return {
+    command: match[1].toLowerCase(),
+    payload: (match[2] || "").trim(),
+  };
+}
 
 interface ActionResult {
   action: ChatAction;
@@ -202,10 +240,37 @@ export function ChatInterface() {
   const [error, setError] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
+  const [isCurrentAgentForced, setIsCurrentAgentForced] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isVoiceSupported, setIsVoiceSupported] = useState(false);
+  const [interimText, setInterimText] = useState("");
+  const [commandMenuIndex, setCommandMenuIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const conversationIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { isSupported, isListening, startListening, stopListening } = useSpeechRecognition({
+    lang: "zh-CN",
+    continuous: true,
+    interimResults: true,
+    onFinalText: (finalText) => {
+      setInput((prev) => {
+        const base = prev.trim();
+        return base ? `${base} ${finalText.trim()}` : finalText.trim();
+      });
+    },
+    onInterimText: (text) => {
+      setInterimText(text);
+    },
+    onError: (code) => {
+      if (code === "not-allowed") {
+        toast.error("麦克风权限被拒绝，请在浏览器设置中允许访问");
+      }
+    },
+    onEnd: () => {
+      setInterimText("");
+    },
+  });
 
   useEffect(() => {
     if (currentConversation) {
@@ -225,38 +290,141 @@ export function ChatInterface() {
     }
   }, [messages, streamingContent]);
 
+  useEffect(() => {
+    setIsVoiceSupported(isSupported);
+  }, [isSupported]);
+
+  const slashMatch = useMemo(() => {
+    if (!input.startsWith("/")) return null;
+    return input.match(/^\/([a-zA-Z]*)(?:\s+([\s\S]*))?$/);
+  }, [input]);
+
+  const slashKeyword = (slashMatch?.[1] || "").toLowerCase();
+  const slashHasPayload = Boolean((slashMatch?.[2] || "").trim());
+  const isCommandMenuOpen = Boolean(slashMatch) && !slashHasPayload;
+
+  const commandSuggestions = useMemo(() => {
+    if (!isCommandMenuOpen) return [];
+    return SLASH_COMMANDS.filter((cmd) => cmd.key.startsWith(slashKeyword));
+  }, [isCommandMenuOpen, slashKeyword]);
+
+  useEffect(() => {
+    setCommandMenuIndex(0);
+  }, [slashKeyword, isCommandMenuOpen]);
+
+  useEffect(() => {
+    if (!isCommandMenuOpen) return;
+    if (commandMenuIndex >= commandSuggestions.length) {
+      setCommandMenuIndex(Math.max(0, commandSuggestions.length - 1));
+    }
+  }, [commandMenuIndex, commandSuggestions.length, isCommandMenuOpen]);
+
+  const applyCommandCompletion = useCallback((cmd: SlashCommandDef) => {
+    setInput(`/${cmd.key}${cmd.key === "help" ? "" : " "}`);
+  }, []);
+
   const saveConversation = useCallback(
-    (msgs: Message[]) => {
+    async (msgs: Message[]) => {
       const realMessages = msgs.filter((m) => m.id !== "welcome");
       if (realMessages.length === 0) return;
       const firstUserMsg = realMessages.find((m) => m.role === "user")?.content || "";
       const title = firstUserMsg.length > 20 ? firstUserMsg.slice(0, 20) + "…" : (firstUserMsg || "新对话");
+      const now = new Date();
+
+      let nextConversation: Conversation;
       if (conversationIdRef.current) {
+        nextConversation = {
+          id: conversationIdRef.current,
+          title,
+          messages: msgs,
+          createdAt: currentConversation?.createdAt || now,
+          updatedAt: now,
+          favorite: currentConversation?.favorite,
+          archived: currentConversation?.archived,
+          context: currentConversation?.context,
+        };
         updateConversation(conversationIdRef.current, { messages: msgs, title });
       } else {
-        const newConv: Conversation = {
+        nextConversation = {
           id: `conv-${Date.now()}`,
           title,
           messages: msgs,
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          createdAt: now,
+          updatedAt: now,
         };
-        conversationIdRef.current = newConv.id;
-        addConversation(newConv);
-        setCurrentConversation(newConv);
+        conversationIdRef.current = nextConversation.id;
+        addConversation(nextConversation);
+        setCurrentConversation(nextConversation);
+      }
+
+      try {
+        await fetch("/api/conversations", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(nextConversation),
+        });
+      } catch {
+        // Keep app usable even if persistence fails transiently.
       }
     },
-    [updateConversation, addConversation, setCurrentConversation]
+    [updateConversation, addConversation, setCurrentConversation, currentConversation]
   );
 
   const handleSend = async (overrideMessage?: string) => {
-    const trimmed = (overrideMessage || input).trim();
-    if (!trimmed || isLoading) return;
+    if (isListening) stopListening();
+    const rawInput = (overrideMessage || input).trim();
+    if (!rawInput || isLoading) return;
+
+    const parsedSlash = parseSlashInput(rawInput);
+    const isSlashCommand = Boolean(parsedSlash);
+    let outboundMessage = rawInput;
+    let forcedAgent: ForcedAgentId | undefined;
+
+    if (isSlashCommand && parsedSlash) {
+      const commandDef = SLASH_COMMAND_MAP.get(parsedSlash.command as SlashCommandKey);
+      if (!commandDef) {
+        const available = SLASH_COMMANDS.map((cmd) => `/${cmd.key}`).join(" ");
+        toast.error(`未知指令: /${parsedSlash.command}。可用: ${available}`);
+        return;
+      }
+      if (commandDef.key === "help") {
+        const userMessage: Message = {
+          id: `msg-${Date.now()}`,
+          role: "user",
+          content: rawInput,
+          timestamp: new Date(),
+        };
+        const helpMessage: Message = {
+          id: `msg-${Date.now() + 1}`,
+          role: "assistant",
+          content: [
+            "### Slash Commands",
+            "",
+            ...SLASH_COMMANDS.map((cmd) =>
+              `- \`/${cmd.key}\` ${cmd.description}${cmd.key === "help" ? "" : ` · 例：\`/${cmd.key} ${cmd.placeholder}\``}`
+            ),
+          ].join("\n"),
+          timestamp: new Date(),
+          metadata: { agentUsed: "Slash Help", forcedAgentUsed: true },
+        };
+        const nextMessages = [...messages, userMessage, helpMessage];
+        setMessages(nextMessages);
+        if (!overrideMessage) setInput("");
+        await saveConversation(nextMessages);
+        return;
+      }
+      if (!parsedSlash.payload) {
+        toast.info(`请补充参数：/${commandDef.key} ${commandDef.placeholder}`);
+        return;
+      }
+      outboundMessage = parsedSlash.payload;
+      forcedAgent = commandDef.forcedAgent;
+    }
 
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
       role: "user",
-      content: trimmed,
+      content: rawInput,
       timestamp: new Date(),
     };
     const newMessages = [...messages, userMessage];
@@ -266,13 +434,15 @@ export function ChatInterface() {
     setError(null);
     setStreamingContent("");
     setCurrentAgent(null);
+    setIsCurrentAgentForced(Boolean(forcedAgent));
 
     try {
+      let forcedUsed = Boolean(forcedAgent);
       const history = messages.filter((m) => m.id !== "welcome").slice(-10).map((msg) => ({ role: msg.role, content: msg.content }));
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, conversationHistory: history, stream: true }),
+        body: JSON.stringify({ message: outboundMessage, conversationHistory: history, stream: true, forcedAgent }),
       });
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}));
@@ -304,6 +474,10 @@ export function ChatInterface() {
                 agentUsed = parsed.agentUsed;
                 setCurrentAgent(agentUsed);
               }
+              if (typeof parsed.forcedAgentUsed === "boolean") {
+                forcedUsed = parsed.forcedAgentUsed;
+                setIsCurrentAgentForced(parsed.forcedAgentUsed);
+              }
               if (parsed.error) setError(parsed.error);
             } catch { /* skip */ }
           }
@@ -317,13 +491,13 @@ export function ChatInterface() {
         role: "assistant",
         content: cleanContent,
         timestamp: new Date(),
-        metadata: agentUsed ? { agentUsed } : undefined,
+        metadata: agentUsed ? { agentUsed, forcedAgentUsed: forcedUsed } : undefined,
       };
 
       const finalMessages = [...newMessages, assistantMessage];
       setMessages(finalMessages);
       setStreamingContent("");
-      saveConversation(finalMessages);
+      await saveConversation(finalMessages);
 
       if (actions.length > 0) {
         const results: ActionResult[] = [];
@@ -345,10 +519,13 @@ export function ChatInterface() {
         content: "抱歉，处理消息时出现错误。请稍后重试。",
         timestamp: new Date(),
       };
-      setMessages([...newMessages, errorMessage]);
+      const failedMessages = [...newMessages, errorMessage];
+      setMessages(failedMessages);
+      await saveConversation(failedMessages);
     } finally {
       setIsLoading(false);
       setCurrentAgent(null);
+      setIsCurrentAgentForced(false);
     }
   };
 
@@ -377,7 +554,7 @@ export function ChatInterface() {
         };
         setMessages((prev) => {
           const next = [...prev, systemMsg];
-          saveConversation(next);
+          void saveConversation(next);
           return next;
         });
       } catch (err) {
@@ -398,6 +575,24 @@ export function ChatInterface() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isCommandMenuOpen && commandSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setCommandMenuIndex((prev) => (prev + 1) % commandSuggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setCommandMenuIndex((prev) => (prev - 1 + commandSuggestions.length) % commandSuggestions.length);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.ctrlKey && !e.metaKey)) {
+        e.preventDefault();
+        applyCommandCompletion(commandSuggestions[commandMenuIndex]);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSend();
@@ -445,30 +640,11 @@ export function ChatInterface() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 h-14 border-b border-border/40 px-6 flex items-center justify-between glass page-drag-header">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center w-8 h-8">
-            <div className="absolute inset-0 gradient-primary rounded-xl blur-[4px] opacity-40 animate-pulse" />
-            <div className="relative w-8 h-8 rounded-xl gradient-primary flex items-center justify-center border border-white/20">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
-          </div>
-          <h2 className="text-sm font-bold tracking-wide">{currentConversation?.title || "Nexus HR"}</h2>
-        </div>
-        {currentAgent && (
-          <Badge variant="outline" className="text-[10px] animate-pulse-soft gap-2 border-primary/20 bg-primary/5 py-1 px-2.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            {currentAgent}
-          </Badge>
-        )}
-      </div>
-
       {/* Messages */}
       {showWelcome ? (
         <WelcomeScreen />
       ) : (
-        <ScrollArea className="flex-1 pt-14 pb-28">
+        <ScrollArea className="flex-1 pt-6 pb-28">
           <div ref={scrollRef} className="w-full max-w-[92%] mx-auto p-6 space-y-8">
             {messages
               .filter((m) => m.id !== "welcome")
@@ -502,8 +678,11 @@ export function ChatInterface() {
                       <div className={`flex items-center gap-2 mt-2 opacity-50 ${message.role === "user" ? "justify-end text-white" : "justify-start text-muted-foreground"}`}>
                         <span className="text-[10px] font-medium tracking-wider">{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         {message.metadata?.agentUsed && (
-                          <span className="text-[10px] font-medium tracking-wider px-1.5 py-0.5 rounded border border-current/30">
-                            {message.metadata.agentUsed}
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium tracking-wider px-1.5 py-0.5 rounded border border-current/30">
+                            <span>{message.metadata.agentUsed}</span>
+                            {message.metadata.forcedAgentUsed && (
+                              <span className="px-1 py-0.5 rounded border border-current/40 text-[9px]">forced</span>
+                            )}
                           </span>
                         )}
                       </div>
@@ -536,7 +715,14 @@ export function ChatInterface() {
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:150ms]" />
                       <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse [animation-delay:300ms]" />
                     </div>
-                    {currentAgent && <span className="text-[10px] font-medium tracking-wider">{currentAgent}</span>}
+                    {currentAgent && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium tracking-wider">
+                        <span>{currentAgent}</span>
+                        {isCurrentAgentForced && (
+                          <span className="px-1 py-0.5 rounded border border-current/40 text-[9px]">forced</span>
+                        )}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -578,6 +764,34 @@ export function ChatInterface() {
       {/* Floating Command Bar */}
       <div className="absolute bottom-6 left-0 right-0 px-6 pointer-events-none z-20">
         <div className="w-full max-w-[92%] lg:max-w-3xl mx-auto pointer-events-auto">
+          {isCommandMenuOpen && (
+            <div className="mb-2 rounded-xl border border-border/60 bg-card/95 backdrop-blur-md shadow-xl overflow-hidden">
+              {commandSuggestions.length > 0 ? (
+                <div className="max-h-56 overflow-y-auto p-1.5">
+                  {commandSuggestions.map((cmd, idx) => (
+                    <button
+                      key={cmd.key}
+                      type="button"
+                      className={`w-full text-left rounded-lg px-3 py-2 transition-colors ${
+                        idx === commandMenuIndex ? "bg-primary/10 border border-primary/30" : "hover:bg-muted/60"
+                      }`}
+                      onClick={() => applyCommandCompletion(cmd)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <code className="text-xs font-semibold text-primary">/{cmd.key}</code>
+                        <span className="text-xs text-foreground">{cmd.title}</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{cmd.description}</p>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-3 py-2.5 text-xs text-muted-foreground">
+                  未找到命令，输入 <code>/help</code> 查看可用指令
+                </div>
+              )}
+            </div>
+          )}
           <div className="glass-panel p-2 rounded-2xl shadow-2xl flex items-end gap-2.5 transition-all duration-300 focus-within:ring-2 focus-within:ring-primary/30 focus-within:shadow-primary/10">
             <input
               ref={fileInputRef}
@@ -597,13 +811,29 @@ export function ChatInterface() {
               <FileText className="w-5 h-5" />
             </Button>
             <Textarea
-              placeholder="输入指令，或粘贴内容..."
+              data-voice-local="true"
+              placeholder="输入消息，或使用 /jd /resume /interview 等指令..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               className="flex-1 min-h-[52px] max-h-[160px] resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 py-3.5 px-2 text-base font-medium placeholder:text-muted-foreground/60"
             />
+            {isVoiceSupported && (
+              <Button
+                onClick={isListening ? stopListening : startListening}
+                variant="ghost"
+                size="icon"
+                className={`h-12 w-12 shrink-0 rounded-xl transition-colors mb-0.5 ${
+                  isListening
+                    ? "bg-red-500/15 text-red-500 hover:bg-red-500/20"
+                    : "hover:bg-primary/10 hover:text-primary"
+                }`}
+                title={isListening ? "停止语音输入" : "开始语音输入"}
+              >
+                {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </Button>
+            )}
             <Button
               onClick={() => handleSend()}
               disabled={!input.trim() || isLoading}
@@ -615,8 +845,18 @@ export function ChatInterface() {
           </div>
           <div className="text-center mt-3 animate-fade-in">
             <p className="text-[10px] font-medium text-muted-foreground/60 tracking-wider">
-              支持拖拽文档 · Ctrl+Enter 发送 · 智能识别意图
+              支持拖拽文档 · Ctrl+Enter 发送 · 输入 / 触发指令菜单
             </p>
+            {isCommandMenuOpen && commandSuggestions[commandMenuIndex] && (
+              <p className="text-[10px] font-medium text-primary/80 mt-1 truncate px-4">
+                参数提示：/{commandSuggestions[commandMenuIndex].key} {commandSuggestions[commandMenuIndex].placeholder}
+              </p>
+            )}
+            {isListening && (
+              <p className="text-[10px] font-medium text-primary/80 mt-1 truncate px-4">
+                正在语音识别：{interimText || "请开始说话..."}
+              </p>
+            )}
           </div>
         </div>
       </div>

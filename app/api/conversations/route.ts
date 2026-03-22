@@ -146,12 +146,12 @@ export async function POST(request: NextRequest) {
 
 /**
  * PUT /api/conversations
- * Update a conversation
+ * Upsert a conversation
  */
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, ...updates } = body;
+    const { id, ...updates } = body as Partial<Conversation> & { id?: string };
 
     if (!id) {
       return NextResponse.json(
@@ -161,18 +161,26 @@ export async function PUT(request: NextRequest) {
     }
 
     const existingConversation = loadConversation(id);
-    if (!existingConversation) {
-      return NextResponse.json(
-        { error: "Conversation not found" },
-        { status: 404 }
-      );
-    }
+    const now = new Date();
 
     const updatedConversation: Conversation = {
-      ...existingConversation,
+      ...(existingConversation || {
+        id,
+        title: "",
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+      }),
       ...updates,
       id,
-      updatedAt: new Date(),
+      createdAt:
+        updates.createdAt
+          ? new Date(updates.createdAt)
+          : existingConversation?.createdAt || now,
+      updatedAt:
+        updates.updatedAt
+          ? new Date(updates.updatedAt)
+          : now,
     };
 
     const saved = saveConversation(updatedConversation);
@@ -183,7 +191,10 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(updatedConversation);
+    return NextResponse.json({
+      ...updatedConversation,
+      upserted: !existingConversation,
+    });
   } catch (error) {
     console.error("Error updating conversation:", error);
     return NextResponse.json(
