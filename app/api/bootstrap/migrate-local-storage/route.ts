@@ -12,27 +12,27 @@ export const runtime = "nodejs";
 function sanitizeConversations(input: unknown): Conversation[] {
   if (!Array.isArray(input)) return [];
 
-  return input
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const row = item as Record<string, unknown>;
-      if (typeof row.id !== "string") return null;
+  const results: Conversation[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    if (typeof row.id !== "string") continue;
 
-      const createdAt = row.createdAt ? new Date(String(row.createdAt)) : new Date();
-      const updatedAt = row.updatedAt ? new Date(String(row.updatedAt)) : createdAt;
+    const createdAt = row.createdAt ? new Date(String(row.createdAt)) : new Date();
+    const updatedAt = row.updatedAt ? new Date(String(row.updatedAt)) : createdAt;
 
-      return {
-        id: row.id,
-        title: typeof row.title === "string" ? row.title : "",
-        messages: Array.isArray(row.messages) ? (row.messages as any[]) : [],
-        context: row.context as any,
-        archived: Boolean(row.archived),
-        favorite: Boolean(row.favorite),
-        createdAt,
-        updatedAt,
-      } satisfies Conversation;
-    })
-    .filter((item): item is Conversation => item !== null);
+    results.push({
+      id: row.id,
+      title: typeof row.title === "string" ? row.title : "",
+      messages: Array.isArray(row.messages) ? (row.messages as any[]) : [],
+      context: row.context as any,
+      archived: Boolean(row.archived),
+      favorite: Boolean(row.favorite),
+      createdAt,
+      updatedAt,
+    });
+  }
+  return results;
 }
 
 export async function POST(request: NextRequest) {

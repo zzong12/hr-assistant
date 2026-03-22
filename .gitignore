@@ -50,3 +50,6 @@ next-env.d.ts
 /build/*.icns
 /build/*.ico
 /build/*.png
+
+# docs
+docs/DEPLOYMENT.md
