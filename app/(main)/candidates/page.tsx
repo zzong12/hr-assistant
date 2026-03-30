@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,15 +11,16 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Users, Upload, Search, Loader2, FileText, Sparkles, Trash2, Edit, X, Plus, ChevronsUpDown, AlertTriangle,
+  ArrowRight, CheckCircle2, Clock3, Filter, Tags, Zap, BriefcaseBusiness,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Candidate, Job } from "@/lib/types";
+import type { Candidate, Interview, Job } from "@/lib/types";
+import { deriveCandidateWorkbenchData, sortCandidatesForWorkbench } from "@/lib/workbench-utils";
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
   pending: { label: "待筛选", dot: "bg-muted-foreground", bg: "bg-muted", text: "text-muted-foreground" },
@@ -30,9 +31,34 @@ const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; te
   rejected: { label: "已淘汰", dot: "bg-red-500", bg: "bg-red-500/10", text: "text-red-600 dark:text-red-400" },
 };
 
+type CandidateExperienceForm = {
+  company: string;
+  position: string;
+  duration: string;
+  description: string;
+};
+
+type CandidateEducationForm = {
+  school: string;
+  degree: string;
+  major: string;
+  graduation?: string;
+};
+
+type CandidateEditForm = {
+  name: string;
+  email: string;
+  phone: string;
+  summary: string;
+  skills: string;
+  experience: CandidateExperienceForm[];
+  education: CandidateEducationForm[];
+};
+
 export default function CandidatesPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [interviews, setInterviews] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -40,10 +66,12 @@ export default function CandidatesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [scoreFilter, setScoreFilter] = useState<string>("all");
   const [jobFilter, setJobFilter] = useState<string>("all");
+  const [tagFilter, setTagFilter] = useState<string>("all");
   const [analyzing, setAnalyzing] = useState(false);
   const [matching, setMatching] = useState(false);
   const [matchingAll, setMatchingAll] = useState(false);
   const [batchMatching, setBatchMatching] = useState(false);
+  const [processingCandidateIds, setProcessingCandidateIds] = useState<Set<string>>(new Set());
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
   const [batchFailedTasks, setBatchFailedTasks] = useState<Array<{ candidateId: string; jobId: string; error?: string }>>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -55,16 +83,24 @@ export default function CandidatesPage() {
   const [deleting, setDeleting] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState<any>(null);
+  const [editForm, setEditForm] = useState<CandidateEditForm | null>(null);
+  const [newManualTag, setNewManualTag] = useState("");
 
   const loadData = async () => {
     try {
-      const [candRes, jobsRes] = await Promise.all([
+      const [candRes, jobsRes, interviewsRes] = await Promise.all([
         fetch("/api/candidates").then((r) => r.json()),
         fetch("/api/jobs").then((r) => r.json()),
+        fetch("/api/interviews").then((r) => r.json()),
       ]);
-      setCandidates(candRes.candidates || []);
+      const nextCandidates = candRes.candidates || [];
+      setCandidates(nextCandidates);
       setJobs(jobsRes.jobs || []);
+      setInterviews(interviewsRes.interviews || []);
+      setSelectedCandidate((current) => {
+        if (!current) return nextCandidates[0] || null;
+        return nextCandidates.find((candidate: Candidate) => candidate.id === current.id) || nextCandidates[0] || null;
+      });
     } catch { toast.error("加载数据失败"); }
     finally { setLoading(false); }
   };
@@ -73,6 +109,7 @@ export default function CandidatesPage() {
 
   const handleAnalyze = async (id: string) => {
     setAnalyzing(true);
+    setProcessingCandidateIds((prev) => new Set(prev).add(id));
     try {
       const res = await fetch(`/api/candidates/${id}/analyze`, { method: "POST" });
       const data = await res.json();
@@ -81,11 +118,19 @@ export default function CandidatesPage() {
       setSelectedCandidate(data);
       loadData();
     } catch (err) { toast.error(err instanceof Error ? err.message : "分析失败"); }
-    finally { setAnalyzing(false); }
+    finally {
+      setAnalyzing(false);
+      setProcessingCandidateIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   const handleMatch = async (candidateId: string, jobId: string) => {
     setMatching(true);
+    setProcessingCandidateIds((prev) => new Set(prev).add(candidateId));
     try {
       const res = await fetch(`/api/candidates/${candidateId}/match`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -97,11 +142,19 @@ export default function CandidatesPage() {
       setSelectedCandidate(data);
       loadData();
     } catch (err) { toast.error(err instanceof Error ? err.message : "匹配失败"); }
-    finally { setMatching(false); }
+    finally {
+      setMatching(false);
+      setProcessingCandidateIds((prev) => {
+        const next = new Set(prev);
+        next.delete(candidateId);
+        return next;
+      });
+    }
   };
 
   const handleMatchAll = async (candidateId: string) => {
     setMatchingAll(true);
+    setProcessingCandidateIds((prev) => new Set(prev).add(candidateId));
     try {
       const res = await fetch(`/api/candidates/${candidateId}/match-all`, {
         method: "POST",
@@ -115,7 +168,14 @@ export default function CandidatesPage() {
         setSelectedCandidate(data.candidate);
       }
     } catch (err) { toast.error(err instanceof Error ? err.message : "批量匹配失败"); }
-    finally { setMatchingAll(false); }
+    finally {
+      setMatchingAll(false);
+      setProcessingCandidateIds((prev) => {
+        const next = new Set(prev);
+        next.delete(candidateId);
+        return next;
+      });
+    }
   };
 
   const handleBatchMatchAll = async () => {
@@ -123,6 +183,7 @@ export default function CandidatesPage() {
     if (targets.length === 0) { toast.info("没有需要匹配的候选人"); return; }
     setBatchMatching(true);
     setBatchProgress({ done: 0, total: targets.length });
+    setProcessingCandidateIds(new Set(targets.map((candidate) => candidate.id)));
     let succeeded = 0;
     for (const c of targets) {
       try {
@@ -134,6 +195,7 @@ export default function CandidatesPage() {
       setBatchProgress(prev => ({ ...prev, done: prev.done + 1 }));
     }
     setBatchMatching(false);
+    setProcessingCandidateIds(new Set());
     toast.success(`批量匹配完成：${succeeded}/${targets.length} 成功`);
     loadData();
   };
@@ -182,6 +244,7 @@ export default function CandidatesPage() {
     setBatchMatching(true);
     setBatchProgress({ done: 0, total: estimated });
     setBatchFailedTasks([]);
+    setProcessingCandidateIds(new Set(chosenCandidateIds));
 
     const allResults: Array<{ candidateId: string; jobId: string; ok: boolean; error?: string }> = [];
     let processed = 0;
@@ -241,6 +304,7 @@ export default function CandidatesPage() {
     const success = allResults.length - failedTasks.length;
     setBatchFailedTasks(failedTasks);
     setBatchMatching(false);
+    setProcessingCandidateIds(new Set());
 
     if (failedTasks.length > 0) {
       toast.warning(`匹配完成：${success}/${allResults.length} 成功，失败 ${failedTasks.length}`);
@@ -253,12 +317,6 @@ export default function CandidatesPage() {
   const getTopScore = (c: Candidate): number => {
     if (!c.matchedJobs?.length) return -1;
     return Math.max(...c.matchedJobs.map(m => m.score));
-  };
-
-  const getTopJobTitle = (c: Candidate): string | null => {
-    if (!c.matchedJobs?.length) return null;
-    const top = c.matchedJobs.reduce((a, b) => a.score > b.score ? a : b);
-    return top.jobTitle || null;
   };
 
   const matchedJobTitles = Array.from(new Set(
@@ -317,7 +375,7 @@ export default function CandidatesPage() {
     if (selectedIds.size === filtered.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filtered.map(c => c.id)));
+      setSelectedIds(new Set(filtered.map((item) => item.candidate.id)));
     }
   };
 
@@ -342,6 +400,68 @@ export default function CandidatesPage() {
     setIsUploadOpen(false);
     loadData();
     if (newCandidate) setSelectedCandidate(newCandidate);
+  };
+
+  const handleManualTagAdd = async () => {
+    if (!selectedCandidate || !newManualTag.trim()) return;
+    const nextTag = newManualTag.trim();
+    const manualTags = Array.from(new Set([...(selectedCandidate.manualTags || []), nextTag]));
+    try {
+      const res = await fetch("/api/candidates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedCandidate.id, manualTags }),
+      });
+      if (!res.ok) throw new Error("标签保存失败");
+      toast.success("已添加标签");
+      setNewManualTag("");
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "标签保存失败");
+    }
+  };
+
+  const handleManualTagRemove = async (tag: string) => {
+    if (!selectedCandidate) return;
+    const manualTags = (selectedCandidate.manualTags || []).filter((item) => item !== tag);
+    try {
+      const res = await fetch("/api/candidates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedCandidate.id, manualTags }),
+      });
+      if (!res.ok) throw new Error("标签删除失败");
+      toast.success("已移除标签");
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "标签删除失败");
+    }
+  };
+
+  const resetWorkbenchFilters = () => {
+    setStatusFilter("all");
+    setScoreFilter("all");
+    setJobFilter("all");
+    setTagFilter("all");
+    setSearchQuery("");
+  };
+
+  const applyWorkbenchQuickFilter = (type: "needs_review" | "follow_up" | "not_started") => {
+    setStatusFilter("all");
+    setScoreFilter("all");
+    setJobFilter("all");
+    setSearchQuery("");
+
+    if (type === "needs_review") {
+      setTagFilter("待复核");
+      return;
+    }
+    if (type === "follow_up") {
+      setTagFilter("待安排面试");
+      return;
+    }
+    setTagFilter("all");
+    setScoreFilter("none");
   };
 
   const handleEdit = () => {
@@ -401,53 +521,89 @@ export default function CandidatesPage() {
   };
 
   const addExperience = () => {
+    if (!editForm) return;
     setEditForm({
       ...editForm,
       experience: [
-        ...(editForm.experience || []),
+        ...editForm.experience,
         { company: "", position: "", duration: "", description: "" },
       ],
     });
   };
 
   const removeExperience = (index: number) => {
+    if (!editForm) return;
     setEditForm({
       ...editForm,
-      experience: editForm.experience.filter((_: any, i: number) => i !== index),
+      experience: editForm.experience.filter((_, i) => i !== index),
     });
   };
 
   const updateExperience = (index: number, field: string, value: string) => {
+    if (!editForm) return;
     const updated = [...editForm.experience];
     updated[index] = { ...updated[index], [field]: value };
     setEditForm({ ...editForm, experience: updated });
   };
 
   const addEducation = () => {
+    if (!editForm) return;
     setEditForm({
       ...editForm,
       education: [
-        ...(editForm.education || []),
+        ...editForm.education,
         { school: "", degree: "", major: "", graduation: "" },
       ],
     });
   };
 
   const removeEducation = (index: number) => {
+    if (!editForm) return;
     setEditForm({
       ...editForm,
-      education: editForm.education.filter((_: any, i: number) => i !== index),
+      education: editForm.education.filter((_, i) => i !== index),
     });
   };
 
   const updateEducation = (index: number, field: string, value: string) => {
+    if (!editForm) return;
     const updated = [...editForm.education];
     updated[index] = { ...updated[index], [field]: value };
     setEditForm({ ...editForm, education: updated });
   };
 
-  const filtered = candidates.filter((c) => {
+  const candidateWorkbench = useMemo(() => {
+    const activeOrPausedJobs = jobs.filter((job) => ["active", "paused"].includes(job.status));
+    const decorated = candidates.map((candidate) => {
+      const withProcessingState = processingCandidateIds.has(candidate.id)
+        ? {
+            ...candidate,
+            matchProgress: {
+              status: "matching" as const,
+              matchedJobCount: candidate.matchedJobs?.length ?? 0,
+              totalJobCount: activeOrPausedJobs.filter((job) => job.status === "active").length,
+              lastMatchedAt: candidate.matchProgress?.lastMatchedAt,
+              needsReview: false,
+            },
+          }
+        : candidate;
+      return deriveCandidateWorkbenchData(withProcessingState, activeOrPausedJobs, interviews);
+    });
+
+    return sortCandidatesForWorkbench(decorated);
+  }, [candidates, jobs, interviews, processingCandidateIds]);
+
+  const availableTags = Array.from(new Set(candidateWorkbench.flatMap((item) => item.allTags))).sort((left, right) =>
+    left.localeCompare(right, "zh-CN")
+  );
+
+  const filtered = candidateWorkbench.filter((item) => {
+    const c = item.candidate;
     if (statusFilter !== "all" && c.status !== statusFilter) return false;
+    if (tagFilter !== "all" && !item.allTags.includes(tagFilter)) return false;
+    if (jobFilter !== "all") {
+      if (!c.matchedJobs?.some(m => m.jobTitle === jobFilter)) return false;
+    }
     if (scoreFilter !== "all") {
       const top = getTopScore(c);
       if (scoreFilter === "80+" && top < 80) return false;
@@ -455,26 +611,35 @@ export default function CandidatesPage() {
       if (scoreFilter === "60-" && (top >= 60 || top < 0)) return false;
       if (scoreFilter === "none" && top >= 0) return false;
     }
-    if (jobFilter !== "all") {
-      if (!c.matchedJobs?.some(m => m.jobTitle === jobFilter)) return false;
-    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return c.name.toLowerCase().includes(q) || (c.contact?.email ?? "").toLowerCase().includes(q) ||
-        c.resume?.parsedData?.skills?.some((s) => s.toLowerCase().includes(q));
+        c.resume?.parsedData?.skills?.some((s) => s.toLowerCase().includes(q)) ||
+        item.allTags.some((tag) => tag.toLowerCase().includes(q));
     }
     return true;
   });
 
+  const selectedCandidateData = selectedCandidate
+    ? candidateWorkbench.find((item) => item.candidate.id === selectedCandidate.id)
+    : null;
+  const suggestedCandidates = filtered.slice(0, 3);
+  const urgentCount = candidateWorkbench.filter((item) => item.progress.status === "needs_review").length;
+  const followUpCount = candidateWorkbench.filter((item) => item.systemTags.includes("待安排面试")).length;
+  const notStartedCount = candidateWorkbench.filter((item) => item.progress.status === "not_started").length;
+
   return (
-    <div className="flex h-full min-h-0">
-      <div className="w-96 border-r border-border/40 bg-muted/10 flex flex-col min-h-0 overflow-hidden">
-        <div className="p-4 border-b border-border/40 space-y-3 page-drag-header shrink-0 max-h-[56vh] overflow-y-auto">
-          <div className="flex items-center justify-between">
-            <h1 className="text-lg font-bold flex items-center gap-2"><Users className="w-5 h-5" />候选人</h1>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.06),transparent_24%)] xl:grid xl:grid-cols-[320px_minmax(360px,1.05fr)_minmax(440px,1fr)] xl:gap-0">
+      <div className="border-b border-border/40 bg-background/85 backdrop-blur xl:border-b-0 xl:border-r">
+        <div className="space-y-4 p-4 page-drag-header">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h1 className="flex items-center gap-2 text-lg font-bold"><Users className="h-5 w-5" />候选人工作台</h1>
+              <p className="mt-1 text-xs text-muted-foreground">先判断优先级，再进入中间名单执行批量操作，最后在右侧做单人决策。</p>
+            </div>
             <Dialog open={isUploadOpen} onOpenChange={setIsUploadOpen}>
               <DialogTrigger asChild>
-                <Button size="sm"><Upload className="w-4 h-4 mr-1" />添加简历</Button>
+                <Button size="sm"><Upload className="mr-1 h-4 w-4" />添加简历</Button>
               </DialogTrigger>
               <DialogContent className="max-w-lg">
                 <DialogHeader><DialogTitle>添加简历</DialogTitle></DialogHeader>
@@ -482,13 +647,15 @@ export default function CandidatesPage() {
               </DialogContent>
             </Dialog>
           </div>
+
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="搜索候选人..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input placeholder="搜索候选人、技能、标签..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
           </div>
-          <div className="flex gap-2">
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部状态</SelectItem>
                 <SelectItem value="pending">待筛选</SelectItem>
@@ -500,7 +667,7 @@ export default function CandidatesPage() {
               </SelectContent>
             </Select>
             <Select value={scoreFilter} onValueChange={setScoreFilter}>
-              <SelectTrigger className="flex-1"><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部评分</SelectItem>
                 <SelectItem value="80+">80分以上</SelectItem>
@@ -509,202 +676,267 @@ export default function CandidatesPage() {
                 <SelectItem value="none">未匹配</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          {matchedJobTitles.length > 0 && (
             <Select value={jobFilter} onValueChange={setJobFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="按职位筛选" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部职位</SelectItem>
-                {matchedJobTitles.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                {matchedJobTitles.map((title) => <SelectItem key={title} value={title}>{title}</SelectItem>)}
               </SelectContent>
             </Select>
-          )}
-          <Card className="p-3 border-border/40 bg-card/70">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-foreground">精准匹配任务</p>
-                <Badge variant="secondary" className="text-[10px]">
-                  候选人 {selectedIds.size} · 职位 {selectedJobIds.size}
-                </Badge>
+            <Select value={tagFilter} onValueChange={setTagFilter}>
+              <SelectTrigger><SelectValue placeholder="按标签筛选" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部标签</SelectItem>
+                {availableTags.map((tag) => <SelectItem key={tag} value={tag}>{tag}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Card className="border-border/40 bg-card/90 p-3 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold">智能建议</p>
+                <p className="text-[11px] text-muted-foreground">点击汇总卡可直接筛出对应候选人名单。</p>
               </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={handleSelectAll}>
-                  {selectedIds.size === filtered.length ? "取消全选候选人" : "全选当前候选人"}
-                </Button>
-                <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setShowJobSelector((v) => !v)}>
-                  {showJobSelector ? "收起职位选择" : "展开职位选择"}
-                </Button>
-              </div>
-              {showJobSelector && (
-                <>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={handleSelectAllJobs}>
-                      全选职位
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={handleClearJobs}>
-                      清空职位
-                    </Button>
-                  </div>
-                  <div className="max-h-28 overflow-y-auto rounded-lg border border-border/40 p-2 space-y-1 bg-muted/20">
-                    {activeJobs.length === 0 && <p className="text-[11px] text-muted-foreground">暂无在招职位</p>}
-                    {activeJobs.map((job) => (
-                      <label key={job.id} className="flex items-center gap-2 text-[11px] cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedJobIds.has(job.id)}
-                          onChange={() => toggleJobSelection(job.id)}
-                          className="w-3.5 h-3.5 rounded border-border"
-                        />
-                        <span className="truncate">{job.title}</span>
-                      </label>
-                    ))}
-                  </div>
-                </>
-              )}
-              {!showJobSelector && (
-                <p className="text-[11px] text-muted-foreground">职位选择已折叠，当前已选 {selectedJobIds.size} 个职位</p>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => handlePreciseBatchMatch(false)}
-                  disabled={batchMatching}
+              <Badge variant="secondary" className="text-[10px]">共 {candidateWorkbench.length} 人</Badge>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button type="button" className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 text-left transition-all hover:-translate-y-0.5 hover:bg-amber-500/10" onClick={() => applyWorkbenchQuickFilter("needs_review")}>
+                <p className="text-lg font-semibold text-amber-600">{urgentCount}</p>
+                <p className="text-[11px] text-muted-foreground">待复核</p>
+              </button>
+              <button type="button" className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-left transition-all hover:-translate-y-0.5 hover:bg-emerald-500/10" onClick={() => applyWorkbenchQuickFilter("follow_up")}>
+                <p className="text-lg font-semibold text-emerald-600">{followUpCount}</p>
+                <p className="text-[11px] text-muted-foreground">待安排面试</p>
+              </button>
+              <button type="button" className="rounded-2xl border border-sky-500/30 bg-sky-500/5 p-3 text-left transition-all hover:-translate-y-0.5 hover:bg-sky-500/10" onClick={() => applyWorkbenchQuickFilter("not_started")}>
+                <p className="text-lg font-semibold text-sky-600">{notStartedCount}</p>
+                <p className="text-[11px] text-muted-foreground">未匹配</p>
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {suggestedCandidates.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">当前筛选下暂无建议对象。</p>
+              ) : suggestedCandidates.map((item) => (
+                <button
+                  key={item.candidate.id}
+                  type="button"
+                  onClick={() => setSelectedCandidate(item.candidate)}
+                  className="flex w-full items-center justify-between rounded-2xl border border-border/50 bg-muted/20 px-3 py-2.5 text-left transition-all hover:border-primary/30 hover:bg-muted/40"
                 >
-                  {batchMatching ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-                  {batchMatching ? `执行中 ${batchProgress.done}/${batchProgress.total}` : "执行精准匹配"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0"
-                  disabled={batchMatching || batchFailedTasks.length === 0}
-                  onClick={() => handlePreciseBatchMatch(true)}
-                >
-                  重试失败({batchFailedTasks.length})
-                </Button>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="w-full text-[11px] h-7"
-                onClick={() => setShowLegacyBatchActions((v) => !v)}
-              >
-                <ChevronsUpDown className="w-3 h-3 mr-1" />
-                高级批量操作
-              </Button>
-              {showLegacyBatchActions && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 space-y-2">
-                  <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3 text-amber-500" />
-                    高算力操作：对所有候选人匹配全部在招职位
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full text-amber-700 border-amber-500/40 hover:bg-amber-500/10"
-                    onClick={handleBatchMatchAll}
-                    disabled={batchMatching}
-                  >
-                    <Sparkles className="w-3 h-3 mr-1" />
-                    一键匹配所有候选人（高级）
-                  </Button>
-                </div>
-              )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{item.candidate.name}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">{item.recommendedAction.label} · {item.recommendedAction.description}</p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              ))}
             </div>
           </Card>
         </div>
+      </div>
 
+      <div className="min-h-0 border-b border-border/40 bg-background/70 xl:border-b-0 xl:border-r">
         {selectedIds.size > 0 && (
-          <div className="px-4 py-2 bg-primary/10 border-b border-border flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-border bg-primary/10 px-4 py-2">
             <span className="text-sm font-medium">已选 {selectedIds.size} 项</span>
             <div className="flex gap-2">
               <Button size="sm" variant="ghost" onClick={handleSelectAll}>
-                {selectedIds.size === filtered.length ? "取消全选" : "全选"}
+                {selectedIds.size === filtered.length && filtered.length > 0 ? "取消全选" : "全选"}
               </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => handleDelete()}
-                disabled={deleting}
-              >
-                {deleting ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Trash2 className="w-3 h-3 mr-1" />}
-                批量删除
+              <Button size="sm" variant="destructive" onClick={() => handleDelete()} disabled={deleting}>
+                {deleting ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Trash2 className="mr-1 h-3 w-3" />}批量删除
               </Button>
             </div>
           </div>
         )}
-
-        <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
-            {loading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div> :
-             filtered.length === 0 ? <p className="text-center text-muted-foreground py-8">暂无候选人</p> :
-             filtered.map((c) => {
+        <div className="border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">候选人列表</h2>
+              <p className="text-[11px] text-muted-foreground">这里是主操作区。先看名单，再做批量匹配或进入单人详情。</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">{filtered.length}</Badge>
+              {(statusFilter !== "all" || scoreFilter !== "all" || jobFilter !== "all" || tagFilter !== "all" || searchQuery) && (
+                <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={resetWorkbenchFilters}>
+                  清空筛选
+                </Button>
+              )}
+            </div>
+          </div>
+          <Card className="mt-3 border-border/40 bg-card/95 p-3 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold">批量匹配操作台</p>
+                <p className="text-[11px] text-muted-foreground">先在当前列表勾选候选人，再决定要匹配的职位范围。</p>
+              </div>
+              <Badge variant="outline" className="text-[10px]">候选人 {selectedIds.size} · 职位 {selectedJobIds.size}</Badge>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={handleSelectAll}>
+                {selectedIds.size === filtered.length && filtered.length > 0 ? "取消全选当前列表" : "全选当前列表"}
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setShowJobSelector((value) => !value)}>
+                <Filter className="mr-1 h-3 w-3" />{showJobSelector ? "收起职位选择" : "展开职位选择"}
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={handleSelectAllJobs}>
+                全选职位
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={handleClearJobs}>
+                清空职位
+              </Button>
+            </div>
+            {showJobSelector && (
+              <div className="mt-2 max-h-28 overflow-y-auto rounded-lg border border-border/40 bg-muted/20 p-2">
+                {activeJobs.length === 0 && <p className="text-[11px] text-muted-foreground">暂无在招职位</p>}
+                <div className="space-y-1">
+                  {activeJobs.map((job) => (
+                    <label key={job.id} className="flex items-center gap-2 text-[11px]">
+                      <input
+                        type="checkbox"
+                        checked={selectedJobIds.has(job.id)}
+                        onChange={() => toggleJobSelection(job.id)}
+                        className="h-3.5 w-3.5 rounded border-border"
+                      />
+                      <span className="truncate">{job.title}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" className="flex-1 min-w-[160px]" onClick={() => handlePreciseBatchMatch(false)} disabled={batchMatching}>
+                {batchMatching ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                {batchMatching ? `执行中 ${batchProgress.done}/${batchProgress.total}` : "执行精准匹配"}
+              </Button>
+              <Button size="sm" variant="outline" disabled={batchMatching || batchFailedTasks.length === 0} onClick={() => handlePreciseBatchMatch(true)}>
+                重试失败({batchFailedTasks.length})
+              </Button>
+              <Button type="button" size="sm" variant="ghost" className="text-[11px]" onClick={() => setShowLegacyBatchActions((value) => !value)}>
+                <ChevronsUpDown className="mr-1 h-3 w-3" />高级批量操作
+              </Button>
+            </div>
+            {showLegacyBatchActions && (
+              <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2">
+                <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><AlertTriangle className="h-3 w-3 text-amber-500" />对当前全部候选人匹配全部在招职位，适合集中跑一轮粗筛。</p>
+                <Button size="sm" variant="outline" className="mt-2 w-full border-amber-500/40 text-amber-700 hover:bg-amber-500/10" onClick={handleBatchMatchAll} disabled={batchMatching}>
+                  <Sparkles className="mr-1 h-3 w-3" />一键匹配所有候选人
+                </Button>
+              </div>
+            )}
+          </Card>
+        </div>
+        <ScrollArea className="h-[36vh] xl:h-full">
+          <div className="space-y-2 p-3">
+            {loading ? <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div> :
+             filtered.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border/60 bg-background/70 px-4 py-10 text-center">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+                  <Filter className="h-5 w-5 text-primary/60" />
+                </div>
+                <p className="text-sm font-medium">当前筛选下没有候选人</p>
+                <p className="mt-1 text-xs text-muted-foreground">可以清空筛选查看全部名单，或添加新的简历。</p>
+              </div>
+             ) :
+             filtered.map((item) => {
+              const c = item.candidate;
               const topScore = getTopScore(c);
-              const topJob = getTopJobTitle(c);
-              const scoreColor = topScore >= 80 ? "text-green-600" : topScore >= 60 ? "text-amber-600" : topScore >= 0 ? "text-red-500" : "text-muted-foreground";
-              const scoreBg = topScore >= 80 ? "bg-green-50 dark:bg-green-950/50" : topScore >= 60 ? "bg-amber-50 dark:bg-amber-950/50" : "";
+              const progressPercent = item.progress.totalJobCount > 0
+                ? Math.round((item.progress.matchedJobCount / item.progress.totalJobCount) * 100)
+                : 0;
               return (
-              <Card
-                key={c.id}
-                className={`p-3.5 cursor-pointer transition-all duration-300 border hover:shadow-md hover:-translate-y-0.5 ${
-                  selectedCandidate?.id === c.id ? "border-primary bg-primary/5 shadow-sm" : "border-border/50 hover:border-primary/30"
-                } ${scoreBg}`}
-                onClick={(e) => handleCardClick(c, e)}
-              >
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(c.id)}
-                    onChange={() => handleSelectOne(c.id)}
-                    className="mt-1 w-4 h-4 rounded border-border cursor-pointer transition-colors checked:bg-primary"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <div className="flex items-start justify-between mb-1 flex-1 min-w-0">
-                    <div className="flex-1 min-w-0 pr-2">
-                    <p className="font-semibold text-sm truncate">{c.name}</p>
-                    <p className="text-[11px] text-muted-foreground truncate font-medium">{c.resume?.parsedData?.skills?.slice(0, 3).join(" · ") || "待分析"}</p>
-                    {topScore >= 0 && (
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <Badge variant="outline" className={`text-[10px] h-4 px-1.5 border-0 bg-background/50 ${scoreColor}`}>
-                          {topScore} 分
-                        </Badge>
-                        {topJob && <span className="text-[10px] text-muted-foreground truncate">{topJob}</span>}
+                <Card
+                  key={c.id}
+                  className={`cursor-pointer border p-3.5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${
+                    selectedCandidate?.id === c.id ? "border-primary bg-primary/5 shadow-md ring-1 ring-primary/15" : "border-border/50 bg-background/80 hover:border-primary/30"
+                  }`}
+                  onClick={(e) => handleCardClick(c, e)}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(c.id)}
+                      onChange={() => handleSelectOne(c.id)}
+                      className="mt-1 h-4 w-4 rounded border-border"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{c.name}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">{c.contact?.email || c.source || "暂无联系方式"}</p>
+                        </div>
+                        <div className={`flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 ${STATUS_CONFIG[c.status]?.bg || "bg-muted"} ${STATUS_CONFIG[c.status]?.text || "text-muted-foreground"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${STATUS_CONFIG[c.status]?.dot || "bg-muted-foreground"}`} />
+                          <span className="text-[10px] font-semibold">{STATUS_CONFIG[c.status]?.label || c.status}</span>
+                        </div>
                       </div>
-                    )}
+
+                      <div className="mt-3 rounded-xl border border-border/40 bg-muted/20 p-2">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <Clock3 className="h-3.5 w-3.5 text-primary/70" />
+                            <span className="font-medium">
+                              {{
+                                not_started: "未开始",
+                                matching: "匹配中",
+                                completed: "已完成",
+                                needs_review: "需复核",
+                              }[item.progress.status]}
+                            </span>
+                          </div>
+                          <span className="text-muted-foreground">{item.progress.matchedJobCount}/{item.progress.totalJobCount || 0}</span>
+                        </div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div className={`h-full rounded-full ${item.progress.status === "needs_review" ? "bg-amber-500" : item.progress.status === "matching" ? "bg-sky-500" : "bg-emerald-500"}`} style={{ width: `${item.progress.status === "needs_review" ? Math.max(progressPercent, 20) : progressPercent}%` }} />
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <span className="truncate text-[11px] text-muted-foreground">{item.bestMatch?.jobTitle || "暂无最佳匹配职位"}</span>
+                          <Badge variant="outline" className="border-0 bg-background/70 text-[10px]">{topScore >= 0 ? `${topScore} 分` : "待匹配"}</Badge>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {item.allTags.slice(0, 4).map((tag) => (
+                          <Badge key={tag} variant={item.systemTags.includes(tag) ? "secondary" : "outline"} className="text-[10px]">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border-0 ${STATUS_CONFIG[c.status]?.bg || "bg-muted"} ${STATUS_CONFIG[c.status]?.text || "text-muted-foreground"} shrink-0`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[c.status]?.dot || "bg-muted-foreground"}`} />
-                    <span className="text-[10px] font-semibold">{STATUS_CONFIG[c.status]?.label || c.status}</span>
-                  </div>
-                </div>
-                </div>
-              </Card>
+                </Card>
               );
             })}
           </div>
         </ScrollArea>
       </div>
 
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {selectedCandidate ? (
-          <ScrollArea className="flex-1 p-6">
-            <div className="space-y-6">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h2 className="text-2xl font-bold">{selectedCandidate.name}</h2>
-                  <div className="text-sm text-muted-foreground space-x-3">
-                    {selectedCandidate.contact?.email && <span>{selectedCandidate.contact.email}</span>}
-                    {selectedCandidate.contact?.phone && <span>{selectedCandidate.contact.phone}</span>}
+      <div className="min-h-0 bg-background/90 backdrop-blur">
+        {selectedCandidateData ? (
+          <ScrollArea className="h-[38vh] xl:h-full">
+            <div className="space-y-6 p-4 xl:p-6">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-2xl font-bold">{selectedCandidateData.candidate.name}</h2>
+                    <Badge variant="outline" className="border-0 bg-primary/10 text-primary">
+                      {selectedCandidateData.recommendedAction.label}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
+                    {selectedCandidateData.candidate.contact?.email && <span>{selectedCandidateData.candidate.contact.email}</span>}
+                    {selectedCandidateData.candidate.contact?.phone && <span>{selectedCandidateData.candidate.contact.phone}</span>}
+                    {selectedCandidateData.bestMatch?.jobTitle && <span>最佳匹配：{selectedCandidateData.bestMatch.jobTitle}</span>}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Select value={selectedCandidate.status} onValueChange={(v) => handleStatusChange(selectedCandidate.id, v)}>
-                    <SelectTrigger className={`w-32 h-8 rounded-full border-0 ${STATUS_CONFIG[selectedCandidate.status]?.bg || "bg-muted"} ${STATUS_CONFIG[selectedCandidate.status]?.text || "text-muted-foreground"}`}>
+                <div className="flex flex-wrap gap-2">
+                  <Select value={selectedCandidateData.candidate.status} onValueChange={(value) => handleStatusChange(selectedCandidateData.candidate.id, value)}>
+                    <SelectTrigger className={`h-8 w-32 rounded-full border-0 ${STATUS_CONFIG[selectedCandidateData.candidate.status]?.bg || "bg-muted"} ${STATUS_CONFIG[selectedCandidateData.candidate.status]?.text || "text-muted-foreground"}`}>
                       <div className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded-full ${STATUS_CONFIG[selectedCandidate.status]?.dot || "bg-muted-foreground"}`} />
-                        <span className="text-xs font-semibold">{STATUS_CONFIG[selectedCandidate.status]?.label || selectedCandidate.status}</span>
+                        <span className={`h-2 w-2 rounded-full ${STATUS_CONFIG[selectedCandidateData.candidate.status]?.dot || "bg-muted-foreground"}`} />
+                        <span className="text-xs font-semibold">{STATUS_CONFIG[selectedCandidateData.candidate.status]?.label || selectedCandidateData.candidate.status}</span>
                       </div>
                     </SelectTrigger>
                     <SelectContent>
@@ -716,130 +948,189 @@ export default function CandidatesPage() {
                       <SelectItem value="rejected">已淘汰</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button variant="outline" size="icon" onClick={handleEdit}><Edit className="w-4 h-4" /></Button>
-                  <Button variant="destructive" size="icon" onClick={() => handleDelete(selectedCandidate.id)}><Trash2 className="w-4 h-4" /></Button>
+                  <Button variant="outline" size="icon" onClick={handleEdit}><Edit className="h-4 w-4" /></Button>
+                  <Button variant="destructive" size="icon" onClick={() => handleDelete(selectedCandidateData.candidate.id)}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => handleAnalyze(selectedCandidate.id)} disabled={analyzing}>
-                  {analyzing ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}AI重新分析
-                </Button>
-                <Select onValueChange={(jobId) => handleMatch(selectedCandidate.id, jobId)} disabled={matching}>
-                  <SelectTrigger className="w-44"><SelectValue placeholder={matching ? "匹配中..." : "匹配职位（高级）"} /></SelectTrigger>
-                  <SelectContent>{jobs.filter((j) => j.status === "active").map((j) => <SelectItem key={j.id} value={j.id}>{j.title}</SelectItem>)}</SelectContent>
-                </Select>
-                <Button
-                  size="sm" variant="outline"
-                  onClick={() => handleMatchAll(selectedCandidate.id)}
-                  disabled={matchingAll}
-                  className="shrink-0"
-                >
-                  {matchingAll ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-                  {matchingAll ? "匹配中..." : "智能匹配全部（高级）"}
-                </Button>
-              </div>
-
-              <Tabs defaultValue="info">
-                <TabsList><TabsTrigger value="info">基本信息</TabsTrigger><TabsTrigger value="match">匹配结果</TabsTrigger></TabsList>
-                <TabsContent value="info" className="space-y-4 mt-4">
-                  {selectedCandidate.resume?.parsedData?.summary && (
-                    <div><h3 className="font-semibold text-sm mb-1">简历摘要</h3><p className="text-sm text-muted-foreground">{selectedCandidate.resume?.parsedData?.summary}</p></div>
-                  )}
-                  {(selectedCandidate.resume?.parsedData?.skills?.length ?? 0) > 0 && (
-                    <div><h3 className="font-semibold text-sm mb-1">技能</h3><div className="flex flex-wrap gap-1">{selectedCandidate.resume?.parsedData?.skills?.map((s) => <Badge key={s} variant="secondary">{s}</Badge>)}</div></div>
-                  )}
-                  {(selectedCandidate.resume?.parsedData?.experience?.length ?? 0) > 0 && (
-                    <div><h3 className="font-semibold text-sm mb-2">工作经历</h3>
-                      {selectedCandidate.resume?.parsedData?.experience?.map((exp, i) => (
-                        <div key={i} className="mb-3"><p className="text-sm font-medium">{exp.position} @ {exp.company}</p><p className="text-xs text-muted-foreground">{exp.duration}</p><p className="text-xs mt-1">{exp.description}</p></div>
-                      ))}
+              <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                <Card className="border-border/40 bg-card/95 p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">匹配进度时间线</p>
+                      <p className="text-xs text-muted-foreground">从简历解析到推荐动作，当前节点一眼可见。</p>
                     </div>
-                  )}
-                  {(selectedCandidate.resume?.parsedData?.education?.length ?? 0) > 0 && (
-                    <div><h3 className="font-semibold text-sm mb-2">教育背景</h3>
-                      {selectedCandidate.resume?.parsedData?.education?.map((edu, i) => (
-                        <p key={i} className="text-sm">{edu.school} · {edu.degree} {edu.major}</p>
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-                <TabsContent value="match" className="space-y-3 mt-4">
-                  {selectedCandidate.matchedJobs?.length > 0 ? selectedCandidate.matchedJobs.map((m, i) => (
-                    <Card key={i} className="p-3 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="font-medium text-sm">{m.jobTitle || m.jobId}</span>
-                        <div className="flex items-center gap-2">
-                          {m.scoringSnapshot && (
-                            <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-dashed">
-                              v{m.scoringSnapshot.version}
-                            </Badge>
-                          )}
-                          <Badge variant="outline" className={`border-0 ${
-                            m.score >= 80 ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-                            m.score >= 60 ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
-                            "bg-muted text-muted-foreground"
-                          }`}>{m.score}分</Badge>
+                    <Badge variant="secondary">
+                      {{
+                        not_started: "未开始",
+                        matching: "匹配中",
+                        completed: "已完成",
+                        needs_review: "需复核",
+                      }[selectedCandidateData.progress.status]}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {[
+                      { label: "简历已入库", done: true, desc: selectedCandidateData.candidate.resume?.filename || "已上传简历" },
+                      { label: "职位匹配", done: selectedCandidateData.progress.matchedJobCount > 0, desc: `${selectedCandidateData.progress.matchedJobCount}/${selectedCandidateData.progress.totalJobCount || 0} 已完成` },
+                      { label: "结果复核", done: !selectedCandidateData.progress.needsReview, desc: selectedCandidateData.progress.needsReview ? "仍需人工复核" : "结果完整" },
+                      { label: "下一步动作", done: selectedCandidateData.recommendedAction.variant === "success", desc: selectedCandidateData.recommendedAction.description },
+                    ].map((step) => (
+                      <div key={step.label} className="flex gap-3">
+                        <div className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full ${step.done ? "bg-emerald-500/10 text-emerald-600" : "bg-muted text-muted-foreground"}`}>
+                          {step.done ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{step.label}</p>
+                          <p className="text-xs text-muted-foreground">{step.desc}</p>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                </Card>
 
-                      {/* Dimension scores mini bars */}
-                      {m.dimensionScores && m.dimensionScores.length > 0 && (
-                        <div className="space-y-1.5 pt-1">
-                          {m.dimensionScores.map(ds => (
-                            <div key={ds.dimensionId} className="flex items-center gap-2">
-                              <span className="text-[10px] text-muted-foreground w-16 truncate shrink-0">{ds.dimensionName}</span>
-                              <div className="flex-1 h-1.5 rounded-full bg-muted/50 overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all ${
-                                    ds.score >= 80 ? "bg-green-500" : ds.score >= 60 ? "bg-amber-500" : "bg-red-400"
-                                  }`}
-                                  style={{ width: `${ds.score}%` }}
-                                />
+                <Card className="border-border/40 bg-card/95 p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">推荐动作</p>
+                      <p className="text-xs text-muted-foreground">系统根据匹配结果给出当前最优下一步。</p>
+                    </div>
+                    <Zap className={`h-4 w-4 ${selectedCandidateData.recommendedAction.variant === "warning" ? "text-amber-500" : selectedCandidateData.recommendedAction.variant === "success" ? "text-emerald-500" : "text-primary"}`} />
+                  </div>
+                  <div className="mt-4 rounded-xl border border-border/40 bg-muted/20 p-3">
+                    <p className="text-sm font-semibold">{selectedCandidateData.recommendedAction.label}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{selectedCandidateData.recommendedAction.description}</p>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => handleAnalyze(selectedCandidateData.candidate.id)} disabled={analyzing}>
+                      {analyzing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}AI 重新分析
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleMatchAll(selectedCandidateData.candidate.id)} disabled={matchingAll}>
+                      {matchingAll ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <BriefcaseBusiness className="mr-1 h-3 w-3" />}匹配全部职位
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => window.location.assign("/interviews")}>
+                      安排面试
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                <Card className="border-border/40 bg-card/95 p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold">匹配结果详情</p>
+                      <p className="text-xs text-muted-foreground">默认聚焦最佳匹配，同时保留备选职位结果。</p>
+                    </div>
+                    <Select onValueChange={(jobId) => handleMatch(selectedCandidateData.candidate.id, jobId)} disabled={matching}>
+                      <SelectTrigger className="h-8 w-44"><SelectValue placeholder={matching ? "匹配中..." : "匹配指定职位"} /></SelectTrigger>
+                      <SelectContent>
+                        {jobs.filter((job) => job.status === "active").map((job) => <SelectItem key={job.id} value={job.id}>{job.title}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {selectedCandidateData.candidate.matchedJobs?.length > 0 ? selectedCandidateData.candidate.matchedJobs
+                      .slice()
+                      .sort((left, right) => right.score - left.score)
+                      .map((match, index) => (
+                        <Card key={`${match.jobId}-${index}`} className={`border p-3 shadow-sm ${index === 0 ? "border-primary/40 bg-primary/5" : "border-border/50 bg-background/80"}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold">{match.jobTitle || match.jobId}</p>
+                                {index === 0 && <Badge variant="secondary">最佳匹配</Badge>}
                               </div>
-                              <span className={`text-[10px] w-8 text-right shrink-0 font-medium ${
-                                ds.score >= 80 ? "text-green-600" : ds.score >= 60 ? "text-amber-600" : "text-red-500"
-                              }`}>{ds.score}</span>
+                              <p className="mt-1 text-xs text-muted-foreground">{match.reason || "暂无匹配说明"}</p>
                             </div>
-                          ))}
+                            <Badge variant="outline" className={`border-0 ${match.score >= 80 ? "bg-emerald-500/10 text-emerald-600" : match.score >= 60 ? "bg-amber-500/10 text-amber-600" : "bg-muted text-muted-foreground"}`}>
+                              {match.score} 分
+                            </Badge>
+                          </div>
+                          {(match.pros?.length ?? 0) > 0 || (match.cons?.length ?? 0) > 0 ? (
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              <div>
+                                <p className="text-[11px] font-semibold text-emerald-600">优势</p>
+                                <div className="mt-1 space-y-1">
+                                  {(match.pros || ["暂无总结"]).map((prosItem, itemIndex) => <p key={itemIndex} className="text-xs text-muted-foreground">+ {prosItem}</p>)}
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-[11px] font-semibold text-orange-600">风险</p>
+                                <div className="mt-1 space-y-1">
+                                  {(match.cons || ["暂无总结"]).map((consItem, itemIndex) => <p key={itemIndex} className="text-xs text-muted-foreground">- {consItem}</p>)}
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                        </Card>
+                      )) : (
+                        <div className="rounded-xl border border-dashed border-border/50 px-4 py-10 text-center text-sm text-muted-foreground">
+                          暂无匹配结果，请先执行智能匹配或指定职位匹配。
                         </div>
                       )}
+                  </div>
+                </Card>
 
-                      <p className="text-xs text-muted-foreground">{m.reason}</p>
-                      {((m.pros?.length ?? 0) > 0 || (m.cons?.length ?? 0) > 0) && (
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          {(m.pros?.length ?? 0) > 0 && (
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-semibold text-green-600">优势</p>
-                              {m.pros!.map((p, pi) => (
-                                <p key={pi} className="text-[11px] text-muted-foreground">+ {p}</p>
-                              ))}
-                            </div>
-                          )}
-                          {(m.cons?.length ?? 0) > 0 && (
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-semibold text-orange-600">风险</p>
-                              {m.cons!.map((c, ci) => (
-                                <p key={ci} className="text-[11px] text-muted-foreground">- {c}</p>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </Card>
-                  )) : <p className="text-sm text-muted-foreground">暂无匹配结果，请选择职位进行匹配</p>}
-                </TabsContent>
-              </Tabs>
+                <div className="space-y-4">
+                  <Card className="border-border/40 bg-card/95 p-4 shadow-sm">
+                    <div className="flex items-center gap-2">
+                      <Tags className="h-4 w-4 text-primary" />
+                      <p className="text-sm font-semibold">标签</p>
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-[11px] text-muted-foreground">系统标签</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedCandidateData.systemTags.length > 0 ? selectedCandidateData.systemTags.map((tag) => (
+                          <Badge key={tag} variant="secondary">{tag}</Badge>
+                        )) : <span className="text-xs text-muted-foreground">暂无系统标签</span>}
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <p className="text-[11px] text-muted-foreground">人工标签</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(selectedCandidateData.candidate.manualTags || []).map((tag) => (
+                          <Badge key={tag} variant="outline" className="gap-1 pr-1">
+                            {tag}
+                            <button type="button" onClick={() => handleManualTagRemove(tag)} className="rounded-full p-0.5 hover:bg-muted">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                        {(selectedCandidateData.candidate.manualTags || []).length === 0 && <span className="text-xs text-muted-foreground">暂无人工标签</span>}
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <Input value={newManualTag} onChange={(e) => setNewManualTag(e.target.value)} placeholder="添加人工标签" />
+                        <Button size="sm" onClick={handleManualTagAdd}>添加</Button>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="border-border/40 bg-card/95 p-4 shadow-sm">
+                    <p className="text-sm font-semibold">简历摘要</p>
+                    {selectedCandidateData.candidate.resume?.parsedData?.summary ? (
+                      <p className="mt-3 text-sm text-muted-foreground">{selectedCandidateData.candidate.resume.parsedData.summary}</p>
+                    ) : (
+                      <p className="mt-3 text-sm text-muted-foreground">暂无简历摘要，可尝试重新分析。</p>
+                    )}
+                    {(selectedCandidateData.candidate.resume?.parsedData?.skills?.length ?? 0) > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {selectedCandidateData.candidate.resume?.parsedData?.skills?.slice(0, 12).map((skill) => <Badge key={skill} variant="outline">{skill}</Badge>)}
+                      </div>
+                    )}
+                  </Card>
+                </div>
+              </div>
             </div>
           </ScrollArea>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-muted-foreground">
             <div className="text-center">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                <Users className="w-8 h-8 text-primary/50" />
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+                <Users className="h-8 w-8 text-primary/50" />
               </div>
-              <p>选择候选人查看详情</p>
-              <p className="text-sm mt-1">或点击"添加简历"直接拖入文件</p>
+              <p className="text-sm font-medium">从中间列表选择候选人查看匹配详情</p>
+              <p className="mt-1 text-sm">左侧先确定优先级，中间列表执行批量操作，右侧处理单人决策。</p>
             </div>
           </div>
         )}
@@ -892,7 +1183,7 @@ export default function CandidatesPage() {
                   <label className="text-sm font-medium">工作经历</label>
                   <Button size="sm" variant="outline" onClick={addExperience}><Plus className="w-3 h-3 mr-1" />添加</Button>
                 </div>
-                {editForm.experience?.map((exp: any, i: number) => (
+                {editForm.experience?.map((exp, i) => (
                   <Card key={i} className="p-3 space-y-2 relative">
                     <Button
                       size="sm" variant="ghost" className="absolute top-2 right-2 h-6 w-6 p-0"
@@ -915,7 +1206,7 @@ export default function CandidatesPage() {
                   <label className="text-sm font-medium">教育背景</label>
                   <Button size="sm" variant="outline" onClick={addEducation}><Plus className="w-3 h-3 mr-1" />添加</Button>
                 </div>
-                {editForm.education?.map((edu: any, i: number) => (
+                {editForm.education?.map((edu, i) => (
                   <Card key={i} className="p-3 space-y-2 relative">
                     <Button
                       size="sm" variant="ghost" className="absolute top-2 right-2 h-6 w-6 p-0"

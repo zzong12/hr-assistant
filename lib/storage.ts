@@ -74,6 +74,7 @@ function initializeTables(db: Database.Database): void {
       hired_count INTEGER DEFAULT 0,
       priority TEXT,
       tags TEXT DEFAULT '[]',
+      analysis TEXT,
       scoring_rule TEXT DEFAULT '{}',
       scoring_rule_id TEXT,
       created_at TEXT NOT NULL,
@@ -95,6 +96,7 @@ function initializeTables(db: Database.Database): void {
       source TEXT DEFAULT '',
       notes TEXT DEFAULT '',
       tags TEXT DEFAULT '[]',
+      manual_tags TEXT DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -113,6 +115,9 @@ function initializeTables(db: Database.Database): void {
       questions TEXT DEFAULT '[]',
       feedback TEXT,
       status TEXT NOT NULL DEFAULT 'scheduled',
+      archived INTEGER DEFAULT 0,
+      archived_at TEXT,
+      archived_from_status TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -164,6 +169,7 @@ function initializeTables(db: Database.Database): void {
       version TEXT NOT NULL DEFAULT '1.0.0',
       dimensions TEXT DEFAULT '[]',
       total_score INTEGER DEFAULT 100,
+      analysis TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -178,8 +184,14 @@ function initializeTables(db: Database.Database): void {
 
   // Migrate: add columns that may be missing from older schema versions
   const migrations: { table: string; column: string; definition: string }[] = [
+    { table: "jobs", column: "analysis", definition: "TEXT" },
     { table: "jobs", column: "scoring_rule", definition: "TEXT DEFAULT '{}'" },
     { table: "jobs", column: "scoring_rule_id", definition: "TEXT" },
+    { table: "candidates", column: "manual_tags", definition: "TEXT DEFAULT '[]'" },
+    { table: "interviews", column: "archived", definition: "INTEGER DEFAULT 0" },
+    { table: "interviews", column: "archived_at", definition: "TEXT" },
+    { table: "interviews", column: "archived_from_status", definition: "TEXT" },
+    { table: "scoring_rules", column: "analysis", definition: "TEXT" },
   ];
 
   for (const m of migrations) {
@@ -346,8 +358,8 @@ function migrateFromFiles(db: Database.Database): void {
 
 function insertJobRow(db: Database.Database, raw: any): void {
   db.prepare(`
-    INSERT OR IGNORE INTO jobs (id, title, level, department, description, skills, salary, status, headcount, hired_count, priority, tags, scoring_rule, scoring_rule_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO jobs (id, title, level, department, description, skills, salary, status, headcount, hired_count, priority, tags, analysis, scoring_rule, scoring_rule_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     raw.id,
     raw.title,
@@ -361,6 +373,7 @@ function insertJobRow(db: Database.Database, raw: any): void {
     raw.hired_count || 0,
     raw.priority || null,
     JSON.stringify(raw.tags || []),
+    raw.analysis ? JSON.stringify(raw.analysis) : null,
     raw.scoringRule ? JSON.stringify(raw.scoringRule) : '{}',
     raw.scoringRuleId ?? null,
     raw.createdAt || new Date().toISOString(),
@@ -370,8 +383,8 @@ function insertJobRow(db: Database.Database, raw: any): void {
 
 function insertCandidateRow(db: Database.Database, raw: any): void {
   db.prepare(`
-    INSERT OR IGNORE INTO candidates (id, name, email, phone, wechat, resume_filename, resume_filepath, resume_parsed_data, resume_raw_text, matched_jobs, status, source, notes, tags, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO candidates (id, name, email, phone, wechat, resume_filename, resume_filepath, resume_parsed_data, resume_raw_text, matched_jobs, status, source, notes, tags, manual_tags, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     raw.id,
     raw.name || "未命名候选人",
@@ -387,6 +400,7 @@ function insertCandidateRow(db: Database.Database, raw: any): void {
     raw.source || "",
     raw.notes || "",
     JSON.stringify(raw.tags || []),
+    JSON.stringify(raw.manualTags || raw.tags || []),
     raw.createdAt || new Date().toISOString(),
     raw.updatedAt || new Date().toISOString()
   );
@@ -394,8 +408,8 @@ function insertCandidateRow(db: Database.Database, raw: any): void {
 
 function insertInterviewRow(db: Database.Database, raw: any): void {
   db.prepare(`
-    INSERT OR IGNORE INTO interviews (id, job_id, candidate_id, job_title, candidate_name, scheduled_time, duration, location, type, interviewer, questions, feedback, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO interviews (id, job_id, candidate_id, job_title, candidate_name, scheduled_time, duration, location, type, interviewer, questions, feedback, status, archived, archived_at, archived_from_status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     raw.id,
     raw.jobId,
@@ -410,6 +424,9 @@ function insertInterviewRow(db: Database.Database, raw: any): void {
     JSON.stringify(raw.questions || []),
     raw.feedback ? JSON.stringify(raw.feedback) : null,
     raw.status || "scheduled",
+    raw.archived ? 1 : 0,
+    raw.archivedAt || null,
+    raw.archivedFromStatus || null,
     raw.createdAt || new Date().toISOString()
   );
 }
@@ -481,6 +498,18 @@ function rowToJob(row: any): Job {
     hired_count: row.hired_count ?? undefined,
     priority: row.priority ?? undefined,
     tags: safeJsonParse(row.tags, []),
+    analysis: row.analysis
+      ? (() => {
+          const parsed = safeJsonParse<any>(row.analysis, undefined);
+          if (!parsed) {
+            return undefined;
+          }
+          return {
+            ...parsed,
+            generatedAt: parsed.generatedAt ? new Date(parsed.generatedAt) : new Date(row.updated_at),
+          };
+        })()
+      : undefined,
     scoringRule,
     scoringRuleId: row.scoring_rule_id ?? undefined,
     createdAt: new Date(row.created_at),
@@ -507,6 +536,7 @@ function rowToCandidate(row: any): Candidate {
     source: row.source || undefined,
     notes: row.notes || undefined,
     tags: safeJsonParse(row.tags, []),
+    manualTags: safeJsonParse(row.manual_tags, safeJsonParse(row.tags, [])),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
@@ -527,6 +557,9 @@ function rowToInterview(row: any): Interview {
     questions: safeJsonParse(row.questions, []),
     feedback: row.feedback ? safeJsonParse(row.feedback, undefined) : undefined,
     status: row.status,
+    archived: !!row.archived,
+    archivedAt: row.archived_at ? new Date(row.archived_at) : undefined,
+    archivedFromStatus: row.archived_from_status || undefined,
     createdAt: new Date(row.created_at),
   };
 }
@@ -573,15 +606,15 @@ function safeJsonParse<T>(str: string | null | undefined, fallback: T): T {
 export function saveJob(job: Job): boolean {
   try {
     const db = getDb();
-    const now = new Date().toISOString();
+    const now = new Date(job.updatedAt ?? new Date()).toISOString();
     db.prepare(`
-      INSERT INTO jobs (id, title, level, department, description, skills, salary, status, headcount, hired_count, priority, tags, scoring_rule, scoring_rule_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO jobs (id, title, level, department, description, skills, salary, status, headcount, hired_count, priority, tags, analysis, scoring_rule, scoring_rule_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title=excluded.title, level=excluded.level, department=excluded.department,
         description=excluded.description, skills=excluded.skills, salary=excluded.salary,
         status=excluded.status, headcount=excluded.headcount, hired_count=excluded.hired_count,
-        priority=excluded.priority, tags=excluded.tags, scoring_rule=excluded.scoring_rule,
+        priority=excluded.priority, tags=excluded.tags, analysis=excluded.analysis, scoring_rule=excluded.scoring_rule,
         scoring_rule_id=excluded.scoring_rule_id, updated_at=excluded.updated_at
     `).run(
       job.id,
@@ -596,6 +629,12 @@ export function saveJob(job: Job): boolean {
       job.hired_count ?? 0,
       job.priority ?? null,
       JSON.stringify(job.tags || []),
+      job.analysis
+        ? JSON.stringify({
+            ...job.analysis,
+            generatedAt: new Date(job.analysis.generatedAt).toISOString(),
+          })
+        : null,
       '{}',
       job.scoringRuleId ?? null,
       new Date(job.createdAt).toISOString(),
@@ -652,14 +691,14 @@ export function saveCandidate(candidate: Candidate): boolean {
     const db = getDb();
     const now = new Date().toISOString();
     db.prepare(`
-      INSERT INTO candidates (id, name, email, phone, wechat, resume_filename, resume_filepath, resume_parsed_data, matched_jobs, status, source, notes, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO candidates (id, name, email, phone, wechat, resume_filename, resume_filepath, resume_parsed_data, matched_jobs, status, source, notes, tags, manual_tags, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name=excluded.name, email=excluded.email, phone=excluded.phone, wechat=excluded.wechat,
         resume_filename=excluded.resume_filename, resume_filepath=excluded.resume_filepath,
         resume_parsed_data=excluded.resume_parsed_data,
         matched_jobs=excluded.matched_jobs, status=excluded.status,
-        source=excluded.source, notes=excluded.notes, tags=excluded.tags, updated_at=excluded.updated_at
+        source=excluded.source, notes=excluded.notes, tags=excluded.tags, manual_tags=excluded.manual_tags, updated_at=excluded.updated_at
     `).run(
       candidate.id,
       candidate.name,
@@ -674,6 +713,7 @@ export function saveCandidate(candidate: Candidate): boolean {
       candidate.source || "",
       candidate.notes || "",
       JSON.stringify(candidate.tags || []),
+      JSON.stringify(candidate.manualTags || candidate.tags || []),
       new Date(candidate.createdAt).toISOString(),
       now
     );
@@ -751,14 +791,15 @@ export function saveInterview(interview: Interview): boolean {
   try {
     const db = getDb();
     db.prepare(`
-      INSERT INTO interviews (id, job_id, candidate_id, job_title, candidate_name, scheduled_time, duration, location, type, interviewer, questions, feedback, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO interviews (id, job_id, candidate_id, job_title, candidate_name, scheduled_time, duration, location, type, interviewer, questions, feedback, status, archived, archived_at, archived_from_status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         job_id=excluded.job_id, candidate_id=excluded.candidate_id,
         job_title=excluded.job_title, candidate_name=excluded.candidate_name,
         scheduled_time=excluded.scheduled_time, duration=excluded.duration,
         location=excluded.location, type=excluded.type, interviewer=excluded.interviewer,
-        questions=excluded.questions, feedback=excluded.feedback, status=excluded.status
+        questions=excluded.questions, feedback=excluded.feedback, status=excluded.status,
+        archived=excluded.archived, archived_at=excluded.archived_at, archived_from_status=excluded.archived_from_status
     `).run(
       interview.id,
       interview.jobId,
@@ -773,6 +814,9 @@ export function saveInterview(interview: Interview): boolean {
       JSON.stringify(interview.questions || []),
       interview.feedback ? JSON.stringify(interview.feedback) : null,
       interview.status || "scheduled",
+      interview.archived ? 1 : 0,
+      interview.archivedAt ? new Date(interview.archivedAt).toISOString() : null,
+      interview.archivedFromStatus ?? null,
       new Date(interview.createdAt).toISOString()
     );
     return true;
@@ -991,25 +1035,44 @@ function rowToScoringRule(row: any): ScoringRule {
     version: row.version || "1.0.0",
     dimensions: safeJsonParse(row.dimensions, []),
     totalScore: row.total_score || 100,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    analysis: row.analysis
+      ? (() => {
+          const parsed = safeJsonParse<any>(row.analysis, undefined);
+          if (!parsed) {
+            return undefined;
+          }
+          return {
+            ...parsed,
+            generatedAt: parsed.generatedAt ? new Date(parsed.generatedAt) : new Date(row.updated_at),
+            proposedRule: parsed.proposedRule
+              ? {
+                  ...parsed.proposedRule,
+                  createdAt: parsed.proposedRule.createdAt ? new Date(parsed.proposedRule.createdAt) : new Date(row.created_at),
+                  updatedAt: parsed.proposedRule.updatedAt ? new Date(parsed.proposedRule.updatedAt) : new Date(row.updated_at),
+                }
+              : undefined,
+          };
+        })()
+      : undefined,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
   };
 }
 
 export function saveScoringRule(rule: ScoringRule): boolean {
   try {
     const db = getDb();
-    const now = new Date().toISOString();
+    const now = new Date(rule.updatedAt ?? new Date()).toISOString();
     const createdAt = rule.createdAt
       ? (rule.createdAt instanceof Date ? rule.createdAt.toISOString() : String(rule.createdAt))
       : now;
     db.prepare(`
-      INSERT INTO scoring_rules (id, name, description, version, dimensions, total_score, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO scoring_rules (id, name, description, version, dimensions, total_score, analysis, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name=excluded.name, description=excluded.description,
         version=excluded.version, dimensions=excluded.dimensions,
-        total_score=excluded.total_score, updated_at=excluded.updated_at
+        total_score=excluded.total_score, analysis=excluded.analysis, updated_at=excluded.updated_at
     `).run(
       rule.id,
       rule.name,
@@ -1017,6 +1080,17 @@ export function saveScoringRule(rule: ScoringRule): boolean {
       rule.version || "1.0.0",
       JSON.stringify(rule.dimensions || []),
       rule.totalScore || 100,
+      rule.analysis
+        ? JSON.stringify({
+            ...rule.analysis,
+            generatedAt: new Date(rule.analysis.generatedAt).toISOString(),
+            proposedRule: {
+              ...rule.analysis.proposedRule,
+              createdAt: new Date(rule.analysis.proposedRule.createdAt).toISOString(),
+              updatedAt: new Date(rule.analysis.proposedRule.updatedAt).toISOString(),
+            },
+          })
+        : null,
       createdAt,
       now
     );

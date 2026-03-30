@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,15 +38,17 @@ import {
   MessageSquare,
   CheckCircle,
   XCircle,
-  ChevronDown,
-  Check,
   Download,
   RefreshCw,
+  Archive,
+  ArchiveRestore,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Interview, Job, Candidate, EvaluationPreset } from "@/lib/types";
 import { exportInterviewToCalendar } from "@/lib/interview-utils";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { deriveInterviewArchiveState } from "@/lib/workbench-utils";
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
   scheduled: { label: "已安排", dot: "bg-blue-500", bg: "bg-blue-500/10", text: "text-blue-600 dark:text-blue-400" },
@@ -72,6 +75,9 @@ export default function InterviewsPage() {
   const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState<Interview | null>(null);
   const [restoreTime, setRestoreTime] = useState("");
+  const [archiving, setArchiving] = useState(false);
+  const [createDefaults, setCreateDefaults] = useState<{ candidateId?: string; jobId?: string }>({});
+  const router = useRouter();
 
   useEffect(() => {
     loadData();
@@ -196,7 +202,7 @@ export default function InterviewsPage() {
       toast.success("日历文件已下载", {
         description: "请在苹果日历中打开此文件",
       });
-    } catch (error) {
+    } catch {
       toast.error("导出失败，请重试");
     }
   };
@@ -253,6 +259,63 @@ export default function InterviewsPage() {
     }
   };
 
+  const handleArchiveToggle = async (interview: Interview, archived: boolean) => {
+    setArchiving(true);
+    try {
+      const res = await fetch("/api/interviews", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: interview.id, archived }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "操作失败");
+
+      setInterviews(interviews.map((item) => (item.id === interview.id ? data : item)));
+      if (selectedInterview?.id === interview.id) setSelectedInterview(data);
+      toast.success(archived ? "面试已归档" : "已取消归档");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "操作失败");
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleBatchArchiveToggle = async (archived: boolean) => {
+    if (selectedInterviews.length === 0) return;
+    setArchiving(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedInterviews.map((interview) =>
+          fetch("/api/interviews", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: interview.id, archived }),
+          }),
+        ),
+      );
+
+      const okIds: string[] = [];
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index];
+        if (result.status === "fulfilled" && result.value.ok) {
+          okIds.push(selectedInterviews[index].id);
+        }
+      }
+
+      if (okIds.length === 0) {
+        throw new Error(archived ? "批量归档失败" : "批量取消归档失败");
+      }
+
+      await loadData();
+      setSelectedIds(new Set());
+      toast.success(archived ? `已归档 ${okIds.length} 条面试记录` : `已恢复 ${okIds.length} 条归档记录`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "批量操作失败");
+    } finally {
+      setArchiving(false);
+    }
+  };
+
   const handleGenerateQuestions = async (interview: Interview) => {
     setGeneratingQuestions(true);
     try {
@@ -275,10 +338,19 @@ export default function InterviewsPage() {
     }
   };
 
-  const filteredInterviews = interviews.filter((i) => {
-    if (statusFilter !== "all" && i.status !== statusFilter) return false;
-    return true;
+  const filteredInterviews = interviews.filter((interview) => {
+    if (statusFilter === "archived") return !!interview.archived;
+    if (statusFilter === "all") return !interview.archived;
+    if (interview.archived) return false;
+    return interview.status === statusFilter;
   });
+
+  const activeCount = interviews.filter((item) => item.status === "scheduled" && !item.archived).length;
+  const completedCount = interviews.filter((item) => item.status === "completed" && !item.archived).length;
+  const archivedCount = interviews.filter((item) => item.archived).length;
+  const selectedInterviews = interviews.filter((item) => selectedIds.has(item.id));
+  const canBatchArchive = selectedInterviews.length > 0 && selectedInterviews.every((item) => !item.archived && ["completed", "cancelled"].includes(item.status));
+  const canBatchRestore = selectedInterviews.length > 0 && selectedInterviews.every((item) => !!item.archived && !!item.archivedFromStatus);
 
   if (loading) {
     return (
@@ -294,7 +366,10 @@ export default function InterviewsPage() {
       <div className="w-96 border-r border-border/40 bg-muted/10 flex flex-col min-h-0 overflow-hidden">
         <div className="p-4 border-b border-border/40 space-y-3 page-drag-header">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold">面试管理</h1>
+            <div>
+              <h1 className="text-xl font-bold">面试管理</h1>
+              <p className="mt-1 text-xs text-muted-foreground">默认聚焦未归档的待处理与历史记录，归档记录可单独查看。</p>
+            </div>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
@@ -310,24 +385,45 @@ export default function InterviewsPage() {
                   jobs={jobs}
                   candidates={candidates}
                   evaluationPresets={evaluationPresets}
+                  initialCandidateId={createDefaults.candidateId}
+                  initialJobId={createDefaults.jobId}
                   onSuccess={() => {
                     setIsCreateDialogOpen(false);
+                    setCreateDefaults({});
                     loadData();
                   }}
-                  onCancel={() => setIsCreateDialogOpen(false)}
+                  onCancel={() => {
+                    setIsCreateDialogOpen(false);
+                    setCreateDefaults({});
+                  }}
                 />
               </DialogContent>
             </Dialog>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <button type="button" onClick={() => setStatusFilter("scheduled")} className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-2 text-left transition-colors hover:bg-sky-500/10">
+              <p className="text-lg font-semibold text-sky-600">{activeCount}</p>
+              <p className="text-[11px] text-muted-foreground">进行中</p>
+            </button>
+            <button type="button" onClick={() => setStatusFilter("completed")} className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-2 text-left transition-colors hover:bg-emerald-500/10">
+              <p className="text-lg font-semibold text-emerald-600">{completedCount}</p>
+              <p className="text-[11px] text-muted-foreground">已完成</p>
+            </button>
+            <button type="button" onClick={() => setStatusFilter("archived")} className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-2 text-left transition-colors hover:bg-amber-500/10">
+              <p className="text-lg font-semibold text-amber-600">{archivedCount}</p>
+              <p className="text-[11px] text-muted-foreground">已归档</p>
+            </button>
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9">
               <SelectValue placeholder="筛选状态" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="scheduled">已安排</SelectItem>
+              <SelectItem value="all">全部未归档</SelectItem>
+              <SelectItem value="scheduled">进行中</SelectItem>
               <SelectItem value="completed">已完成</SelectItem>
               <SelectItem value="cancelled">已取消</SelectItem>
+              <SelectItem value="archived">已归档</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -336,6 +432,18 @@ export default function InterviewsPage() {
           <div className="px-4 py-2 bg-primary/10 border-b border-border flex items-center justify-between">
             <span className="text-sm font-medium">已选 {selectedIds.size} 项</span>
             <div className="flex gap-2">
+              {canBatchArchive && (
+                <Button size="sm" variant="outline" onClick={() => handleBatchArchiveToggle(true)} disabled={archiving}>
+                  <Archive className="w-3 h-3 mr-1" />
+                  批量归档
+                </Button>
+              )}
+              {canBatchRestore && (
+                <Button size="sm" variant="outline" onClick={() => handleBatchArchiveToggle(false)} disabled={archiving}>
+                  <ArchiveRestore className="w-3 h-3 mr-1" />
+                  批量取消归档
+                </Button>
+              )}
               <Button size="sm" variant="ghost" onClick={handleSelectAll}>
                 {selectedIds.size === filteredInterviews.length ? "取消全选" : "全选"}
               </Button>
@@ -362,6 +470,12 @@ export default function InterviewsPage() {
                 }`}
                 onClick={(e) => handleCardClick(interview, e)}
               >
+                {interview.archived && (
+                  <div className="mb-2 flex items-center gap-1 text-[10px] font-medium text-amber-600">
+                    <FolderOpen className="h-3 w-3" />
+                    已归档
+                  </div>
+                )}
                 <div className="flex items-start gap-3">
                   <input
                     type="checkbox"
@@ -402,11 +516,44 @@ export default function InterviewsPage() {
             ))}
 
             {filteredInterviews.length === 0 && (
-              <div className="text-center text-muted-foreground py-8">
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                  <Calendar className="w-8 h-8 text-primary/50" />
+              <div className="py-8 text-center text-muted-foreground">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+                  {statusFilter === "archived" ? (
+                    <Archive className="h-8 w-8 text-primary/50" />
+                  ) : (
+                    <Calendar className="h-8 w-8 text-primary/50" />
+                  )}
                 </div>
-                <p className="text-sm">暂无面试安排</p>
+                <p className="text-sm font-medium">
+                  {interviews.length === 0
+                    ? "还没有任何面试记录"
+                    : statusFilter === "archived"
+                    ? "暂无已归档面试"
+                    : "当前筛选下没有面试记录"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {interviews.length === 0
+                    ? "可以先安排一场新面试，后续再管理历史与归档。"
+                    : statusFilter === "archived"
+                    ? "完成或取消的面试可以归档，方便把主列表保持清爽。"
+                    : "试试切换筛选状态，或查看已归档记录。"}
+                </p>
+                <div className="mt-4 flex justify-center gap-2">
+                  {interviews.length === 0 ? (
+                    <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
+                      <Plus className="mr-1 h-4 w-4" />
+                      安排面试
+                    </Button>
+                  ) : statusFilter === "archived" ? (
+                    <Button size="sm" variant="outline" onClick={() => setStatusFilter("all")}>
+                      查看未归档列表
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setStatusFilter("archived")}>
+                      查看已归档
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -417,6 +564,9 @@ export default function InterviewsPage() {
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {selectedInterview ? (
           <>
+            {(() => {
+              const archiveState = deriveInterviewArchiveState(selectedInterview);
+              return (
             <div className="p-6 border-b border-border">
               <div className="flex items-start justify-between">
                 <div>
@@ -424,6 +574,11 @@ export default function InterviewsPage() {
                     {getCandidateName(selectedInterview.candidateId)}
                   </h2>
                   <div className="flex gap-3 items-center mt-2">
+                    {selectedInterview.archived && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-600">
+                        <Archive className="h-3 w-3" />已归档
+                      </span>
+                    )}
                     <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border-0 ${STATUS_CONFIG[selectedInterview.status]?.bg || "bg-muted"} ${STATUS_CONFIG[selectedInterview.status]?.text || "text-muted-foreground"}`}>
                       <span className={`w-2 h-2 rounded-full ${STATUS_CONFIG[selectedInterview.status]?.dot || "bg-muted-foreground"}`} />
                       <span className="text-xs font-semibold">{STATUS_CONFIG[selectedInterview.status]?.label || selectedInterview.status}</span>
@@ -442,7 +597,26 @@ export default function InterviewsPage() {
                     <Download className="w-4 h-4 mr-1" />
                     添加到日历
                   </Button>
-                  {selectedInterview.status === "scheduled" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setCreateDefaults({ candidateId: selectedInterview.candidateId, jobId: selectedInterview.jobId });
+                      setIsCreateDialogOpen(true);
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    安排新面试
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push("/candidates")}
+                  >
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    继续匹配
+                  </Button>
+                  {!selectedInterview.archived && selectedInterview.status === "scheduled" && (
                     <>
                       <Button
                         variant="outline"
@@ -462,7 +636,7 @@ export default function InterviewsPage() {
                       </Button>
                     </>
                   )}
-                  {selectedInterview.status === "cancelled" && (
+                  {!selectedInterview.archived && selectedInterview.status === "cancelled" && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -470,6 +644,28 @@ export default function InterviewsPage() {
                     >
                       <RefreshCw className="w-4 h-4 mr-1" />
                       恢复
+                    </Button>
+                  )}
+                  {archiveState.canArchive && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleArchiveToggle(selectedInterview, true)}
+                      disabled={archiving}
+                    >
+                      <Archive className="w-4 h-4 mr-1" />
+                      归档
+                    </Button>
+                  )}
+                  {archiveState.canRestore && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleArchiveToggle(selectedInterview, false)}
+                      disabled={archiving}
+                    >
+                      <ArchiveRestore className="w-4 h-4 mr-1" />
+                      取消归档
                     </Button>
                   )}
                   <Button
@@ -482,6 +678,8 @@ export default function InterviewsPage() {
                 </div>
               </div>
             </div>
+              );
+            })()}
 
             <ScrollArea className="flex-1 p-6">
               <div className="space-y-6">
@@ -849,17 +1047,21 @@ function CreateInterviewForm({
   jobs,
   candidates,
   evaluationPresets,
+  initialCandidateId,
+  initialJobId,
   onSuccess,
   onCancel,
 }: {
   jobs: Job[];
   candidates: Candidate[];
   evaluationPresets: EvaluationPreset[];
+  initialCandidateId?: string;
+  initialJobId?: string;
   onSuccess: () => void;
   onCancel: () => void;
 }) {
-  const [jobId, setJobId] = useState("");
-  const [candidateId, setCandidateId] = useState("");
+  const [jobId, setJobId] = useState(initialJobId || "");
+  const [candidateId, setCandidateId] = useState(initialCandidateId || "");
   const [scheduledTime, setScheduledTime] = useState(getNextWorkday());
   const [evaluationPresetId, setEvaluationPresetId] = useState<string>("");
   const [loading, setLoading] = useState(false);

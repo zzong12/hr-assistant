@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { CandidateDetailContent } from "@/components/CandidateDetailContent";
+import { buildJobAnalysisInsight, isJobAnalysisStale } from "@/lib/job-analysis-utils";
 import type { Job, Candidate, JobMatch, ScoringRule, ScoringRuleSnapshot } from "@/lib/types";
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string }> = {
@@ -50,6 +51,7 @@ export default function JobsPage() {
   const [deleteType, setDeleteType] = useState<"single" | "batch">("single");
   const [deleting, setDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [analyzingJobId, setAnalyzingJobId] = useState<string | null>(null);
 
   // Sheet state for candidate details
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -80,8 +82,13 @@ export default function JobsPage() {
       ]);
       const jobsData = await jobsRes.json();
       const candidatesData = await candidatesRes.json();
-      setJobs(jobsData.jobs || []);
+      const nextJobs = jobsData.jobs || [];
+      setJobs(nextJobs);
       setCandidates(candidatesData.candidates || []);
+      setSelectedJob((current) => {
+        if (!current) return current;
+        return nextJobs.find((job: Job) => job.id === current.id) || current;
+      });
     } catch { toast.error("加载数据失败"); }
     finally { setLoading(false); }
   };
@@ -200,6 +207,31 @@ export default function JobsPage() {
     }
   };
 
+  const handleAnalyzeJob = async (jobId: string) => {
+    setAnalyzingJobId(jobId);
+    try {
+      const response = await fetch("/api/jobs/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "岗位分析生成失败");
+      }
+
+      setJobs((current) => current.map((job) => (job.id === data.job.id ? data.job : job)));
+      setSelectedJob((current) => (current?.id === data.job.id ? data.job : current));
+      toast.success("岗位分析已生成");
+    } catch (error) {
+      console.error("岗位分析生成失败:", error);
+      toast.error(error instanceof Error ? error.message : "岗位分析生成失败");
+    } finally {
+      setAnalyzingJobId(null);
+    }
+  };
+
   const openCandidateSheet = (candidate: Candidate, match: JobMatch) => {
     setSelectedCandidate(candidate);
     setSelectedMatch(match);
@@ -241,6 +273,23 @@ export default function JobsPage() {
     if (score >= 80) return "border-green-500";
     if (score >= 60) return "border-amber-500";
     return "border-red-500";
+  };
+
+  const renderAnalysisList = (title: string, items: string[]) => {
+    if (items.length === 0) return null;
+
+    return (
+      <div className="space-y-2">
+        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+        <ul className="space-y-1.5">
+          {items.map((item) => (
+            <li key={`${title}-${item}`} className="text-sm leading-6 text-muted-foreground">
+              • {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
   };
 
   const getMatchedCandidates = (jobId: string) => {
@@ -564,6 +613,92 @@ export default function JobsPage() {
                 {selectedJob.skills?.length > 0 && (
                   <div className="flex flex-wrap gap-2">{selectedJob.skills.map((s) => <Badge key={s} variant="secondary">{s}</Badge>)}</div>
                 )}
+                <Card className="overflow-hidden border-primary/15 bg-gradient-to-br from-primary/5 via-background to-background shadow-sm">
+                  <div className="border-b border-border/60 px-5 py-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-primary" />
+                          <h3 className="font-semibold">岗位分析总览</h3>
+                          {selectedJob.analysis && (
+                            <Badge variant="outline" className="text-[10px]">
+                              AI 生成于 {new Date(selectedJob.analysis.generatedAt).toLocaleString("zh-CN", { hour12: false })}
+                            </Badge>
+                          )}
+                          {selectedJob.analysis && isJobAnalysisStale(selectedJob) && (
+                            <Badge variant="secondary" className="text-[10px] text-amber-700 bg-amber-500/10">
+                              分析可能已过期
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          这里会把岗位要求、人选画像、行业门槛和招聘建议集中展示，方便你在查看 JD 时直接形成判断。
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="shrink-0"
+                        disabled={analyzingJobId === selectedJob.id}
+                        onClick={() => handleAnalyzeJob(selectedJob.id)}
+                      >
+                        {analyzingJobId === selectedJob.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            生成中
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            {selectedJob.analysis ? "重新生成分析" : "生成岗位分析"}
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  {selectedJob.analysis ? (
+                    <div className="grid gap-5 px-5 py-5 lg:grid-cols-[1.2fr_0.8fr]">
+                      <div className="space-y-5">
+                        <div className="rounded-2xl border border-primary/10 bg-background/90 p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Info className="w-4 h-4 text-primary" />
+                            <h4 className="text-sm font-semibold">岗位摘要</h4>
+                          </div>
+                          <p className="text-sm leading-6 text-muted-foreground">
+                            {selectedJob.analysis.summary || "分析已生成，建议结合岗位原文继续核对细节。"}
+                          </p>
+                        </div>
+                        <div className="grid gap-5 md:grid-cols-2">
+                          {renderAnalysisList("岗位要求分析", selectedJob.analysis.requirementAnalysis)}
+                          {renderAnalysisList("人选画像", selectedJob.analysis.candidatePersona)}
+                          {renderAnalysisList("行业能力级别", selectedJob.analysis.industryCapabilityLevel)}
+                          {renderAnalysisList("招聘建议", selectedJob.analysis.hiringSuggestions)}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 p-4 space-y-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-primary/70">
+                            {buildJobAnalysisInsight(selectedJob.analysis).headline}
+                          </p>
+                          <p className="mt-2 text-sm text-muted-foreground leading-6">
+                            这块内容会同步作用到“匹配候选人”的解释层，帮助你先看真正重要的门槛，而不是只看表面关键词。
+                          </p>
+                        </div>
+                        {renderAnalysisList("优先核对", buildJobAnalysisInsight(selectedJob.analysis).mustHaves)}
+                        {renderAnalysisList("理想背景", buildJobAnalysisInsight(selectedJob.analysis).personaHighlights)}
+                        {renderAnalysisList("行业门槛", buildJobAnalysisInsight(selectedJob.analysis).industrySignals)}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="px-5 py-6">
+                      <div className="rounded-2xl border border-dashed border-border bg-background/80 p-5">
+                        <p className="font-medium mb-2">还没有岗位分析</p>
+                        <p className="text-sm text-muted-foreground leading-6">
+                          生成后会自动输出岗位要求拆解、人选画像、行业能力级别和招聘建议，并同步给匹配候选人区域提供解释提示。
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </Card>
                 {selectedJob.description?.overview && (
                   <div><h3 className="font-semibold mb-2">职位概述</h3><p className="text-sm text-muted-foreground">{selectedJob.description.overview}</p></div>
                 )}
@@ -770,6 +905,8 @@ export default function JobsPage() {
             {(() => {
               const matchedCandidates = getMatchedCandidates(selectedJob.id);
               const jobDimensions = selectedJob.scoringRule?.dimensions || [];
+              const analysisInsight = selectedJob.analysis ? buildJobAnalysisInsight(selectedJob.analysis) : null;
+              const analysisStale = selectedJob.analysis ? isJobAnalysisStale(selectedJob) : false;
 
               return (
                 <div className="h-full flex flex-col">
@@ -781,6 +918,49 @@ export default function JobsPage() {
                       </h3>
                       <Badge variant="secondary">{matchedCandidates.length} 位</Badge>
                     </div>
+
+                    {analysisInsight && (
+                      <Card className="border-primary/15 bg-primary/5 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-2">
+                            <p className="text-sm font-semibold flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-primary" />
+                              {analysisInsight.headline}
+                            </p>
+                            <p className="text-xs text-muted-foreground leading-5">
+                              候选人列表会优先围绕岗位必备项和行业门槛来阅读，能更快找到真正值得跟进的人选。
+                            </p>
+                          </div>
+                          {analysisStale && (
+                            <Badge variant="secondary" className="text-[10px] text-amber-700 bg-amber-500/10">
+                              可能过期
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="mt-3 grid gap-2">
+                          {analysisInsight.mustHaves.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-medium text-foreground/80 mb-1">必备项</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {analysisInsight.mustHaves.map((item) => (
+                                  <Badge key={item} variant="secondary" className="text-[10px]">{item}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {analysisInsight.industrySignals.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-medium text-foreground/80 mb-1">行业门槛</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {analysisInsight.industrySignals.map((item) => (
+                                  <Badge key={item} variant="outline" className="text-[10px]">{item}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    )}
 
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

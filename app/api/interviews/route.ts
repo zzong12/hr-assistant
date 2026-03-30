@@ -76,14 +76,14 @@ export async function POST(request: NextRequest) {
 
     let evaluationPreset: Interview["evaluationPreset"];
     if (evaluationPresetId) {
-      const presetsJson = loadSetting("evaluation_presets");
-      if (presetsJson) {
-        try {
-          const presets = JSON.parse(presetsJson);
-          evaluationPreset = presets.find((p: any) => p.id === evaluationPresetId);
-        } catch {}
+        const presetsJson = loadSetting("evaluation_presets");
+        if (presetsJson) {
+          try {
+            const presets = JSON.parse(presetsJson) as Interview["evaluationPreset"][];
+            evaluationPreset = presets.find((preset) => preset?.id === evaluationPresetId);
+          } catch {}
+        }
       }
-    }
 
     const newInterview: Interview = {
       id: generateId(),
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, feedback, status, ...updates } = body;
+    const { id, feedback, status, archived, ...updates } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -166,12 +166,45 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    let nextStatus = (status || existingInterview.status) as Interview["status"];
+    let nextArchived = typeof archived === "boolean" ? archived : !!existingInterview.archived;
+    let archivedAt = existingInterview.archivedAt;
+    let archivedFromStatus = existingInterview.archivedFromStatus;
+
+    if (typeof archived === "boolean") {
+      if (archived) {
+        if (!["completed", "cancelled"].includes(existingInterview.status)) {
+          return NextResponse.json(
+            { error: "仅已完成或已取消的面试可归档" },
+            { status: 400 }
+          );
+        }
+        nextArchived = true;
+        archivedAt = new Date();
+        archivedFromStatus = existingInterview.status as "completed" | "cancelled";
+      } else {
+        if (!existingInterview.archived || !existingInterview.archivedFromStatus) {
+          return NextResponse.json(
+            { error: "当前面试不可反归档" },
+            { status: 400 }
+          );
+        }
+        nextArchived = false;
+        nextStatus = existingInterview.archivedFromStatus;
+        archivedAt = undefined;
+        archivedFromStatus = undefined;
+      }
+    }
+
     const updatedInterview: Interview = {
       ...existingInterview,
       ...updates,
       id,
       feedback: feedback || existingInterview.feedback,
-      status: status || existingInterview.status,
+      status: nextStatus,
+      archived: nextArchived,
+      archivedAt,
+      archivedFromStatus,
     };
 
     if (updates.scheduledTime) {

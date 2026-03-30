@@ -13,10 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import {
   Target, Plus, Search, Trash2, Edit, Briefcase,
-  Loader2, Save, ArrowLeft, Layers, Link2,
+  Loader2, Save, ArrowLeft, Layers, Link2, Sparkles, Wand2, Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ScoringRuleEditor } from "@/components/ScoringRuleEditor";
+import { applyScoringRuleAnalysis } from "@/lib/scoring-rule-analysis-utils";
 import type { ScoringRule, Job } from "@/lib/types";
 
 export default function ScoringRulesPage() {
@@ -32,6 +33,8 @@ export default function ScoringRulesPage() {
   const [newRuleName, setNewRuleName] = useState("");
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [analyzingRuleId, setAnalyzingRuleId] = useState<string | null>(null);
+  const [editingFromAnalysis, setEditingFromAnalysis] = useState(false);
 
   const fetchRules = useCallback(async () => {
     try {
@@ -66,6 +69,7 @@ export default function ScoringRulesPage() {
     setSelectedRule(rule);
     setIsEditing(false);
     setEditingRule(null);
+    setEditingFromAnalysis(false);
     fetchRuleDetail(rule.id);
   };
 
@@ -94,6 +98,7 @@ export default function ScoringRulesPage() {
       setSelectedRule(rule);
       setIsEditing(true);
       setEditingRule(rule);
+      setEditingFromAnalysis(false);
       setLinkedJobs([]);
     } catch {
       toast.error("创建失败");
@@ -118,6 +123,7 @@ export default function ScoringRulesPage() {
       setSelectedRule(updated);
       setIsEditing(false);
       setEditingRule(null);
+      setEditingFromAnalysis(false);
       await fetchRules();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "保存失败");
@@ -163,6 +169,44 @@ export default function ScoringRulesPage() {
       name: editingRule?.name || data.rule.name,
       explanation: data.explanation,
     };
+  };
+
+  const handleAnalyzeRule = async (ruleId: string) => {
+    setAnalyzingRuleId(ruleId);
+    try {
+      const response = await fetch("/api/scoring-rules/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "评分参考分析失败");
+      }
+
+      setSelectedRule(data.rule);
+      setRules((current) => current.map((rule) => (rule.id === data.rule.id ? data.rule : rule)));
+      setLinkedJobs(data.linkedJobs || []);
+      toast.success("评分参考分析已生成");
+    } catch (error) {
+      console.error("评分参考分析失败:", error);
+      toast.error(error instanceof Error ? error.message : "评分参考分析失败");
+    } finally {
+      setAnalyzingRuleId(null);
+    }
+  };
+
+  const handleApplyAnalysis = () => {
+    if (!selectedRule?.analysis) {
+      return;
+    }
+
+    const draftRule = applyScoringRuleAnalysis(selectedRule, selectedRule.analysis);
+    setIsEditing(true);
+    setEditingRule(draftRule);
+    setEditingFromAnalysis(true);
+    toast.success("已将 AI 建议载入编辑区，可继续微调后保存");
   };
 
   const filteredRules = rules.filter(r =>
@@ -267,7 +311,7 @@ export default function ScoringRulesPage() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => { setIsEditing(false); setEditingRule(null); }}
+                  onClick={() => { setIsEditing(false); setEditingRule(null); setEditingFromAnalysis(false); }}
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
@@ -288,6 +332,21 @@ export default function ScoringRulesPage() {
             </div>
             <ScrollArea className="flex-1 p-4">
               <div className="max-w-3xl space-y-4">
+                {editingFromAnalysis && (
+                  <Card className="border-primary/20 bg-primary/5 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+                        <Wand2 className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold">当前为 AI 建议草案</p>
+                        <p className="text-xs text-muted-foreground leading-5">
+                          这份评分条件是根据当前评分参考和关联岗位生成的建议版本。你可以继续调整维度、权重和评估方式，点击保存后才会正式生效。
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">名称</Label>
@@ -343,6 +402,7 @@ export default function ScoringRulesPage() {
                   onClick={() => {
                     setIsEditing(true);
                     setEditingRule({ ...selectedRule });
+                    setEditingFromAnalysis(false);
                   }}
                 >
                   <Edit className="w-3.5 h-3.5 mr-1" />编辑
@@ -360,6 +420,153 @@ export default function ScoringRulesPage() {
 
             <ScrollArea className="flex-1 p-4">
               <div className="max-w-3xl space-y-6">
+                <Card className="overflow-hidden border-primary/15 bg-gradient-to-br from-primary/5 via-background to-background shadow-sm">
+                  <div className="border-b border-border/60 px-5 py-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-primary" />
+                          <h4 className="text-sm font-semibold">评分参考分析建议</h4>
+                          {selectedRule.analysis && (
+                            <Badge variant="outline" className="text-[10px]">
+                              AI 生成于 {new Date(selectedRule.analysis.generatedAt).toLocaleString("zh-CN", { hour12: false })}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          结合当前评分参考和已关联岗位，判断哪里覆盖不足、权重失衡，以及该怎么改得更贴近真实招聘。
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={analyzingRuleId === selectedRule.id}
+                          onClick={() => handleAnalyzeRule(selectedRule.id)}
+                        >
+                          {analyzingRuleId === selectedRule.id ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                              分析中
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                              {selectedRule.analysis ? "重新分析" : "生成分析建议"}
+                            </>
+                          )}
+                        </Button>
+                        {selectedRule.analysis && (
+                          <Button size="sm" className="gradient-primary text-white" onClick={handleApplyAnalysis}>
+                            <Wand2 className="w-3.5 h-3.5 mr-1.5" />
+                            一键应用建议
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {selectedRule.analysis ? (
+                    <div className="grid gap-5 px-5 py-5 lg:grid-cols-[1.1fr_0.9fr]">
+                      <div className="space-y-5">
+                        <div className="rounded-2xl border border-primary/10 bg-background/90 p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Info className="w-4 h-4 text-primary" />
+                            <h5 className="text-sm font-semibold">整体判断</h5>
+                          </div>
+                          <p className="text-sm leading-6 text-muted-foreground">
+                            {selectedRule.analysis.summary || "AI 已完成分析，建议结合岗位与评分维度继续确认。"}
+                          </p>
+                        </div>
+
+                        <div className="grid gap-5 md:grid-cols-2">
+                          {selectedRule.analysis.coverageGaps.length > 0 && (
+                            <div className="space-y-2">
+                              <h5 className="text-sm font-semibold">覆盖不足</h5>
+                              <ul className="space-y-1.5">
+                                {selectedRule.analysis.coverageGaps.map((item) => (
+                                  <li key={item} className="text-sm leading-6 text-muted-foreground">• {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {selectedRule.analysis.weightAdjustments.length > 0 && (
+                            <div className="space-y-2">
+                              <h5 className="text-sm font-semibold">权重调整建议</h5>
+                              <ul className="space-y-1.5">
+                                {selectedRule.analysis.weightAdjustments.map((item) => (
+                                  <li key={item} className="text-sm leading-6 text-muted-foreground">• {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {selectedRule.analysis.industrySignals.length > 0 && (
+                            <div className="space-y-2">
+                              <h5 className="text-sm font-semibold">行业/业务信号</h5>
+                              <ul className="space-y-1.5">
+                                {selectedRule.analysis.industrySignals.map((item) => (
+                                  <li key={item} className="text-sm leading-6 text-muted-foreground">• {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {selectedRule.analysis.recommendedChanges.length > 0 && (
+                            <div className="space-y-2">
+                              <h5 className="text-sm font-semibold">建议动作</h5>
+                              <ul className="space-y-1.5">
+                                {selectedRule.analysis.recommendedChanges.map((item) => (
+                                  <li key={item} className="text-sm leading-6 text-muted-foreground">• {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 p-4 space-y-4">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-primary/70">AI 建议草案</p>
+                          <p className="mt-2 text-sm text-muted-foreground leading-6">
+                            一键应用后会把这套草案加载到编辑区，你可以继续微调后再保存，不会直接覆盖现有规则。
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-semibold">{selectedRule.analysis.proposedRule.name}</p>
+                            <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+                              {selectedRule.analysis.proposedRule.dimensions.length} 维度
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-5">
+                            {selectedRule.analysis.proposedRule.description || "建议后的规则会更贴近当前岗位需求。"}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          {selectedRule.analysis.proposedRule.dimensions.slice(0, 4).map((dimension) => (
+                            <div key={dimension.id} className="rounded-xl border border-border/60 bg-background/80 p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium">{dimension.name}</p>
+                                <Badge variant="outline" className="text-[10px]">{dimension.weight}%</Badge>
+                              </div>
+                              {dimension.description && (
+                                <p className="text-xs text-muted-foreground mt-1.5 leading-5">{dimension.description}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="px-5 py-6">
+                      <div className="rounded-2xl border border-dashed border-border bg-background/80 p-5">
+                        <p className="font-medium mb-2">还没有分析建议</p>
+                        <p className="text-sm text-muted-foreground leading-6">
+                          生成后会分析当前评分参考与关联岗位的匹配程度，指出覆盖缺口、权重问题，并给出一套可一键载入的优化草案。
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+
                 {/* Dimensions */}
                 <div>
                   <h4 className="text-sm font-semibold flex items-center gap-2 mb-3">

@@ -15,8 +15,18 @@ export interface Job {
   tags?: string[];
   scoringRule?: ScoringRule;
   scoringRuleId?: string;
+  analysis?: JobAnalysis;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface JobAnalysis {
+  summary: string;
+  requirementAnalysis: string[];
+  candidatePersona: string[];
+  industryCapabilityLevel: string[];
+  hiringSuggestions: string[];
+  generatedAt: Date;
 }
 
 export interface JobDescription {
@@ -44,8 +54,18 @@ export interface Candidate {
   source?: string;
   notes?: string;
   tags?: string[];
+  manualTags?: string[];
+  matchProgress?: CandidateMatchProgress;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface CandidateMatchProgress {
+  status: "not_started" | "matching" | "completed" | "needs_review";
+  matchedJobCount: number;
+  totalJobCount: number;
+  lastMatchedAt?: Date;
+  needsReview: boolean;
 }
 
 export interface CandidateContact {
@@ -123,8 +143,19 @@ export interface ScoringRule {
   version: string;
   dimensions: ScoringDimension[];
   totalScore: number;
+  analysis?: ScoringRuleAnalysis;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ScoringRuleAnalysis {
+  summary: string;
+  coverageGaps: string[];
+  weightAdjustments: string[];
+  industrySignals: string[];
+  recommendedChanges: string[];
+  proposedRule: ScoringRule;
+  generatedAt: Date;
 }
 
 export interface ScoringRuleSnapshot {
@@ -187,6 +218,9 @@ export interface Interview {
   evaluationPreset?: EvaluationPreset;
   transcript?: string;
   status: InterviewStatus;
+  archived?: boolean;
+  archivedAt?: Date;
+  archivedFromStatus?: Extract<InterviewStatus, "completed" | "cancelled">;
   createdAt: Date;
 }
 
